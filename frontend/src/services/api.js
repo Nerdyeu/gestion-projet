@@ -220,6 +220,80 @@ export const toggleTaskComplete = async (id, completed) => {
 }
 
 // ========================================
+// PARAMÈTRES UTILISATEUR
+// ========================================
+
+export const getCurrentUser = async () => {
+  try {
+    const response = await api.get('/user/current')
+    return response.data
+  } catch (error) {
+    console.error('Erreur lors de la récupération de l\'utilisateur actuel:', error)
+    throw error
+  }
+}
+
+export const getUserSettings = async (userId) => {
+  try {
+    const response = await api.get(`/user/${userId}/settings`)
+    return response.data
+  } catch (error) {
+    console.error('Erreur lors de la récupération des paramètres:', error)
+    throw error
+  }
+}
+
+export const updateUserProfile = async (userId, profileData) => {
+  try {
+    const response = await api.patch(`/user/${userId}/profile`, profileData)
+    return response.data
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour du profil:', error)
+    throw error
+  }
+}
+
+export const updateUserNotifications = async (userId, notificationData) => {
+  try {
+    const response = await api.patch(`/user/${userId}/notifications`, notificationData)
+    return response.data
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour des notifications:', error)
+    throw error
+  }
+}
+
+export const updateUserPassword = async (userId, passwordData) => {
+  try {
+    const response = await api.patch(`/user/${userId}/password`, passwordData)
+    return response.data
+  } catch (error) {
+    console.error('Erreur lors du changement de mot de passe:', error)
+    throw error
+  }
+}
+
+export const updateUserAppearance = async (userId, appearanceData) => {
+  try {
+    const response = await api.patch(`/user/${userId}/appearance`, appearanceData)
+    return response.data
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de l\'apparence:', error)
+    throw error
+  }
+}
+
+export const updateUserGeneral = async (userId, generalData) => {
+  try {
+    const response = await api.patch(`/user/${userId}/general`, generalData)
+    return response.data
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour des paramètres généraux:', error)
+    throw error
+  }
+}
+
+// ========================================
 // AUTHENTIFICATION (à implémenter)
 // ========================================
 

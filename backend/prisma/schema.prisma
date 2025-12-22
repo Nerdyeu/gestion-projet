@@ -15,10 +15,25 @@ model User {
   email     String   @unique
   password  String
   name      String
+  phone     String?
   role      String   @default("user") // admin, user
+
+  // Paramètres de notifications
+  emailNotifications     Boolean  @default(true)
+  projectNotifications   Boolean  @default(true)
+  taskNotifications      Boolean  @default(true)
+
+  // Paramètres d'apparence
+  theme                  String   @default("Clair") // Clair, Sombre, Automatique
+  primaryColor           String   @default("blue") // blue, green, purple, red
+
+  // Paramètres généraux
+  language               String   @default("Français")
+  timezone               String   @default("Europe/Paris (GMT+1)")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   projects  Project[]
   tasks     Task[]
 }
@@ -77,10 +92,10 @@ model Task {
   dueDate     DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  projectId   Int
-  project     Project  @relation(fields: [projectId], references: [id])
-  
+
+  projectId   Int?
+  project     Project?  @relation(fields: [projectId], references: [id])
+
   userId      Int?
   user        User?    @relation(fields: [userId], references: [id])
 }

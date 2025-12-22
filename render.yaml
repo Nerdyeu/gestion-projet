@@ -1,0 +1,35 @@
+services:
+  # Backend API
+  - type: web
+    name: gestion-projet-backend
+    runtime: node
+    buildCommand: cd backend && npm install && npx prisma generate && npx prisma db push
+    startCommand: cd backend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        value: file:./prod.db
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_SECURE
+        value: false
+      - key: SMTP_PASS
+        sync: false
+
+  # Frontend
+  - type: web
+    name: gestion-projet-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: gestion-projet-backend
+          envVarKey: RENDER_EXTERNAL_URL

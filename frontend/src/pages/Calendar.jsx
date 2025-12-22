@@ -1,16 +1,29 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, FolderKanban } from 'lucide-react'
-import { getTasks, getProjects } from '../services/api'
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, FolderKanban, Mail, CheckCircle2, AlertCircle } from 'lucide-react'
+import { getTasks, getProjects, createTask, createProject, toggleTaskComplete } from '../services/api'
+import DayDetailsModal from '../components/DayDetailsModal'
+import { loginToMicrosoft, logoutFromMicrosoft, getCalendarEvents, isUserLoggedIn } from '../services/outlookService'
 
 export default function Calendar() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [tasks, setTasks] = useState([])
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [outlookConnected, setOutlookConnected] = useState(false)
+  const [outlookEvents, setOutlookEvents] = useState([])
 
   useEffect(() => {
     fetchData()
+    checkOutlookConnection()
   }, [])
+
+  useEffect(() => {
+    if (outlookConnected) {
+      fetchOutlookEvents()
+    }
+  }, [outlookConnected, currentDate])
 
   const fetchData = async () => {
     try {
@@ -83,6 +96,14 @@ export default function Calendar() {
     })
   }
 
+  const getOutlookEventsForDate = (date) => {
+    return outlookEvents.filter(event => {
+      if (!event.start || !event.start.dateTime) return false
+      const eventDate = new Date(event.start.dateTime)
+      return eventDate.toDateString() === date.toDateString()
+    })
+  }
+
   const previousMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1))
   }
@@ -98,6 +119,76 @@ export default function Calendar() {
   const isToday = (date) => {
     const today = new Date()
     return date.toDateString() === today.toDateString()
+  }
+
+  const handleDayClick = (date) => {
+    setSelectedDate(date)
+    setIsModalOpen(true)
+  }
+
+  const handleCreateTask = async (taskData) => {
+    try {
+      await createTask(taskData)
+      await fetchData()
+    } catch (error) {
+      console.error('Erreur lors de la création de la tâche:', error)
+    }
+  }
+
+  const handleCreateProject = async (projectData) => {
+    try {
+      await createProject(projectData)
+      await fetchData()
+    } catch (error) {
+      console.error('Erreur lors de la création du projet:', error)
+    }
+  }
+
+  const handleToggleTask = async (taskId, completed) => {
+    try {
+      await toggleTaskComplete(taskId, completed)
+      await fetchData()
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour de la tâche:', error)
+    }
+  }
+
+  const checkOutlookConnection = async () => {
+    const isConnected = await isUserLoggedIn()
+    setOutlookConnected(isConnected)
+  }
+
+  const fetchOutlookEvents = async () => {
+    try {
+      const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
+      const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0)
+
+      const events = await getCalendarEvents(startOfMonth, endOfMonth)
+      setOutlookEvents(events)
+    } catch (error) {
+      console.error('Erreur lors de la récupération des événements Outlook:', error)
+    }
+  }
+
+  const handleConnectOutlook = async () => {
+    try {
+      await loginToMicrosoft()
+      setOutlookConnected(true)
+      await fetchOutlookEvents()
+    } catch (error) {
+      console.error('Erreur lors de la connexion à Outlook:', error)
+      alert('Erreur lors de la connexion à Microsoft. Veuillez réessayer.')
+    }
+  }
+
+  const handleDisconnectOutlook = async () => {
+    try {
+      await logoutFromMicrosoft()
+      setOutlookConnected(false)
+      setOutlookEvents([])
+    } catch (error) {
+      console.error('Erreur lors de la déconnexion:', error)
+    }
   }
 
   const getPriorityColor = (priority) => {
@@ -141,6 +232,75 @@ export default function Calendar() {
         <p className="mt-2 text-gray-600">Visualisez vos échéances et tâches</p>
       </div>
 
+      {/* Carte de connexion Outlook */}
+      <div className="mb-6">
+        <div className={`
+          bg-white rounded-lg shadow-lg p-6 border-2 transition-all
+          ${outlookConnected ? 'border-green-400' : 'border-blue-400'}
+        `}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`
+                p-3 rounded-full
+                ${outlookConnected ? 'bg-green-100' : 'bg-blue-100'}
+              `}>
+                {outlookConnected ? (
+                  <CheckCircle2 className="w-6 h-6 text-green-600" />
+                ) : (
+                  <Mail className="w-6 h-6 text-blue-600" />
+                )}
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {outlookConnected ? 'Outlook connecté' : 'Synchronisation Outlook'}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {outlookConnected
+                    ? 'Vos événements Outlook sont synchronisés avec le calendrier'
+                    : 'Connectez votre compte Outlook pour synchroniser vos événements'
+                  }
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {outlookConnected ? (
+                <>
+                  <div className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-sm text-green-700 font-medium">Actif</span>
+                  </div>
+                  <button
+                    onClick={handleDisconnectOutlook}
+                    className="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-medium"
+                  >
+                    Déconnecter
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleConnectOutlook}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <Mail className="w-4 h-4" />
+                  Se connecter
+                </button>
+              )}
+            </div>
+          </div>
+
+          {!outlookConnected && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex items-start gap-2 text-sm text-gray-600">
+                <AlertCircle className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                <p>
+                  Une fois connecté, vos réunions et événements Outlook apparaîtront automatiquement dans ce calendrier.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="grid gap-6">
         <div className="w-full">
           <div className="bg-white rounded-lg shadow-lg p-6">
@@ -173,33 +333,34 @@ export default function Calendar() {
             <table className="w-full border-collapse border-2 border-gray-400 table-fixed">
               <tbody>
                 {Array.from({ length: 6 }).map((_, weekIndex) => (
-                  <tr key={weekIndex} className="h-64">
+                  <tr key={weekIndex} className="h-40">
                     {days.slice(weekIndex * 7, weekIndex * 7 + 7).map((day, dayIndex) => {
                       const dayTasks = getTasksForDate(day.date)
                       const dayProjects = getProjectDeadlinesForDate(day.date)
-                      const hasEvents = dayTasks.length > 0 || dayProjects.length > 0
+                      const dayOutlookEvents = getOutlookEventsForDate(day.date)
+                      const hasEvents = dayTasks.length > 0 || dayProjects.length > 0 || dayOutlookEvents.length > 0
                       const dayName = weekDays[day.date.getDay()]
 
                       return (
                         <td
                           key={weekIndex * 7 + dayIndex}
+                          onClick={() => handleDayClick(day.date)}
                           className={`
-                            p-3 border border-gray-400 align-top transition-all
-                            ${day.isCurrentMonth ? 'bg-white' : 'bg-gray-100'}
-                            ${isToday(day.date) ? 'bg-purple-100 border-purple-600 border-2' : ''}
-                            ${hasEvents ? 'hover:bg-gray-50 cursor-pointer' : ''}
+                            p-2 border border-gray-400 align-top transition-all cursor-pointer
+                            ${day.isCurrentMonth ? 'bg-white hover:bg-gray-50' : 'bg-gray-100 hover:bg-gray-200'}
+                            ${isToday(day.date) ? 'bg-purple-100 border-purple-600 border-2 hover:bg-purple-200' : ''}
                           `}
                         >
                           <div className="flex items-center justify-between mb-1">
                             <span className={`
-                              text-[6px] font-bold uppercase
+                              text-[10px] font-bold uppercase
                               ${day.isCurrentMonth ? 'text-gray-600' : 'text-gray-400'}
                               ${isToday(day.date) ? 'text-purple-700' : ''}
                             `}>
                               {dayName}
                             </span>
                             <span className={`
-                              text-sm font-bold
+                              text-lg font-bold
                               ${day.isCurrentMonth ? 'text-gray-900' : 'text-gray-400'}
                               ${isToday(day.date) ? 'text-purple-700' : ''}
                             `}>
@@ -207,12 +368,12 @@ export default function Calendar() {
                             </span>
                           </div>
 
-                          <div className="space-y-0.5">
+                          <div className="space-y-1">
                             {dayTasks.slice(0, 3).map((task) => (
                               <div
                                 key={task.id}
                                 className={`
-                                  text-[6px] px-1 py-0.5 rounded truncate font-medium
+                                  text-[9px] px-1.5 py-1 rounded truncate font-medium
                                   ${task.completed ? 'bg-green-200 text-green-900 line-through' :
                                     task.priority === 'Haute' ? 'bg-red-200 text-red-900' :
                                     task.priority === 'Moyenne' ? 'bg-yellow-200 text-yellow-900' :
@@ -226,15 +387,24 @@ export default function Calendar() {
                             {dayProjects.slice(0, 1).map((project) => (
                               <div
                                 key={`project-${project.id}`}
-                                className="text-[6px] px-1 py-0.5 rounded truncate bg-purple-200 text-purple-900 font-medium"
+                                className="text-[9px] px-1.5 py-1 rounded truncate bg-purple-200 text-purple-900 font-medium"
                                 title={project.name}
                               >
                                 {project.name}
                               </div>
                             ))}
-                            {(dayTasks.length + dayProjects.length) > 4 && (
-                              <div className="text-[6px] text-gray-600 font-bold">
-                                +{dayTasks.length + dayProjects.length - 4}
+                            {dayOutlookEvents.slice(0, 1).map((event, idx) => (
+                              <div
+                                key={`outlook-${idx}`}
+                                className="text-[9px] px-1.5 py-1 rounded truncate bg-blue-100 text-blue-800 font-medium border border-blue-300"
+                                title={event.subject}
+                              >
+                                📅 {event.subject}
+                              </div>
+                            ))}
+                            {(dayTasks.length + dayProjects.length + dayOutlookEvents.length) > 5 && (
+                              <div className="text-[9px] text-gray-600 font-bold">
+                                +{dayTasks.length + dayProjects.length + dayOutlookEvents.length - 5}
                               </div>
                             )}
                           </div>
@@ -306,6 +476,18 @@ export default function Calendar() {
           </div>
         </div>
       </div>
+
+      {/* Modal des détails du jour */}
+      <DayDetailsModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        date={selectedDate}
+        tasks={selectedDate ? getTasksForDate(selectedDate) : []}
+        projects={selectedDate ? getProjectDeadlinesForDate(selectedDate) : []}
+        onCreateTask={handleCreateTask}
+        onCreateProject={handleCreateProject}
+        onToggleTask={handleToggleTask}
+      />
     </div>
   )
 }

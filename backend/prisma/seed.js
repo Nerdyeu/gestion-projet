@@ -8,6 +8,7 @@ async function main() {
   // Nettoyer la base de données
   await prisma.task.deleteMany()
   await prisma.project.deleteMany()
+  await prisma.event.deleteMany()
   await prisma.client.deleteMany()
   await prisma.supplier.deleteMany()
   await prisma.user.deleteMany()
@@ -18,7 +19,15 @@ async function main() {
       name: 'Admin',
       email: 'admin@gestionpro.fr',
       password: 'password123', // À hasher en production
-      role: 'admin'
+      phone: '+33 6 12 34 56 78',
+      role: 'admin',
+      emailNotifications: true,
+      projectNotifications: true,
+      taskNotifications: true,
+      theme: 'Clair',
+      primaryColor: 'blue',
+      language: 'Français',
+      timezone: 'Europe/Paris (GMT+1)'
     }
   })
 

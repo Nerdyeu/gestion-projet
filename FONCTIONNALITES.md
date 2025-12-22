@@ -6,6 +6,51 @@ Cette application permet de gérer des projets, tâches, clients et fournisseurs
 
 ---
 
+## ⭐ Nouvelles Fonctionnalités
+
+### 📧 Notifications par Email (Nouveau!)
+
+**Description:**
+Reçois automatiquement des emails quand tu termines une tâche ou un projet.
+
+**Configuration:**
+1. Va dans **Paramètres > Profil** et configure ton email
+2. Va dans **Paramètres > Notifications** et active:
+   - ✅ Notifications de tâches
+   - ✅ Notifications de projet
+
+**Utilisation:**
+- Termine une tâche → Email automatique envoyé!
+- Marque un projet comme "Terminé" → Email de félicitations!
+
+**Note:** En développement, consulte la console du serveur pour le lien de prévisualisation des emails.
+
+---
+
+### 🎨 Thèmes et Couleurs Personnalisables (Nouveau!)
+
+**Description:**
+Change l'apparence de l'application selon tes préférences.
+
+**Thèmes disponibles:**
+- **Clair** : Interface lumineuse (par défaut)
+- **Sombre** : Mode sombre pour tes yeux
+- **Automatique** : Suit les préférences système (bientôt)
+
+**Couleurs principales:**
+- 🔵 Bleu (par défaut)
+- 🟢 Vert
+- 🟣 Violet
+- 🔴 Rouge
+
+**Comment changer:**
+1. Va dans **Paramètres > Apparence**
+2. Choisis ton thème
+3. Sélectionne ta couleur préférée
+4. L'interface change instantanément!
+
+---
+
 ## Dashboard
 
 ### Statistiques

@@ -1,9 +1,8 @@
-﻿import express from 'express'
+import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { PrismaClient } from '@prisma/client'
 import os from 'os'
-import { sendTaskCompletedEmail, sendProjectCompletedEmail } from './services/emailService.js'
 
 dotenv.config()
 
@@ -11,11 +10,11 @@ const app = express()
 const PORT = process.env.PORT || 5000
 const prisma = new PrismaClient()
 
-// Utilisateur par défaut (sert de fallback si aucun utilisateur fourni)
+// Utilisateur par d�faut (sert de fallback si aucun utilisateur fourni)
 const DEFAULT_USER = {
   name: 'Admin',
   email: 'admin@gestionpro.fr',
-  password: 'password123', // À hasher en production
+  password: 'password123', // � hasher en production
   role: 'admin'
 }
 
@@ -51,7 +50,7 @@ app.get('/api/stats', async (req, res) => {
       tasks: taskCount
     })
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la rÃ©cupÃ©ration des statistiques' })
+    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' })
   }
 })
 
@@ -67,7 +66,7 @@ app.get('/api/projects', async (req, res) => {
     })
     res.json(projects)
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la rÃ©cupÃ©ration des projets' })
+    res.status(500).json({ error: 'Erreur lors de la récupération des projets' })
   }
 })
 
@@ -107,7 +106,7 @@ app.post('/api/projects', async (req, res) => {
     res.status(201).json(project)
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Erreur lors de la création du projet' })
+    res.status(500).json({ error: 'Erreur lors de la cr�ation du projet' })
   }
 })
 app.patch('/api/projects/:id', async (req, res) => {
@@ -123,19 +122,13 @@ app.patch('/api/projects/:id', async (req, res) => {
 
     const projectId = parseInt(id)
 
-    // Si le statut passe à "Terminé", marquer toutes les tâches comme complètes et progression à 100%
-    if (status === 'Terminé') {
+    // Si le statut passe � "Termin�", marquer toutes les t�ches comme compl�tes et progression � 100%
+    if (status === 'Termin�') {
       await prisma.task.updateMany({
         where: { projectId: projectId },
         data: { completed: true }
       })
     }
-
-    // Récupérer l'ancien statut avant la mise à jour
-    const oldProject = await prisma.project.findUnique({
-      where: { id: projectId },
-      select: { status: true }
-    })
 
     const project = await prisma.project.update({
       where: { id: projectId },
@@ -143,33 +136,20 @@ app.patch('/api/projects/:id', async (req, res) => {
         ...rest,
         ...(status !== undefined ? {
           status,
-          // Si terminé, forcer la progression à 100%
-          ...(status === 'Terminé' ? { progress: 100 } : {})
+          // Si termin�, forcer la progression � 100%
+          ...(status === 'Termin�' ? { progress: 100 } : {})
         } : {}),
         ...(clientId !== undefined ? { clientId: parsedClientId } : {}),
-        // N'appliquer la progression manuelle que si le statut n'est pas "Terminé"
-        ...(progress !== undefined && status !== 'Terminé' ? { progress: Number.isNaN(parsedProgress) ? 0 : parsedProgress } : {}),
+        // N'appliquer la progression manuelle que si le statut n'est pas "Termin�"
+        ...(progress !== undefined && status !== 'Termin�' ? { progress: Number.isNaN(parsedProgress) ? 0 : parsedProgress } : {}),
         ...(deadline !== undefined ? { deadline: deadline ? new Date(deadline) : null } : {})
       },
       include: { client: true, tasks: true }
     })
-
-    // Envoyer un email si le projet vient d'être terminé
-    if (status === 'Terminé' && oldProject.status !== 'Terminé') {
-      const user = await prisma.user.findFirst({
-        select: { email: true, name: true, projectNotifications: true }
-      })
-
-      if (user && user.projectNotifications) {
-        console.log('🔔 Envoi notification email pour projet terminé...')
-        sendProjectCompletedEmail(user.email, user.name, project).catch(console.error)
-      }
-    }
-
     res.json(project)
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Erreur lors de la mise à jour du projet' })
+    res.status(500).json({ error: 'Erreur lors de la mise � jour du projet' })
   }
 })
 app.delete('/api/projects/:id', async (req, res) => {
@@ -177,7 +157,7 @@ app.delete('/api/projects/:id', async (req, res) => {
     const { id } = req.params
     const projectId = parseInt(id)
 
-    // Supprimer d'abord toutes les tâches liées au projet
+    // Supprimer d'abord toutes les t�ches li�es au projet
     await prisma.task.deleteMany({
       where: { projectId: projectId }
     })
@@ -187,7 +167,7 @@ app.delete('/api/projects/:id', async (req, res) => {
       where: { id: projectId }
     })
 
-    res.json({ message: 'Projet supprimé' })
+    res.json({ message: 'Projet supprim�' })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Erreur lors de la suppression du projet' })
@@ -205,7 +185,7 @@ app.get('/api/clients', async (req, res) => {
     })
     res.json(clients)
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la rÃ©cupÃ©ration des clients' })
+    res.status(500).json({ error: 'Erreur lors de la récupération des clients' })
   }
 })
 
@@ -218,7 +198,7 @@ app.post('/api/clients', async (req, res) => {
     res.status(201).json(client)
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Erreur lors de la crÃ©ation du client' })
+    res.status(500).json({ error: 'Erreur lors de la création du client' })
   }
 })
 
@@ -231,7 +211,7 @@ app.patch('/api/clients/:id', async (req, res) => {
     })
     res.json(client)
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la mise Ã  jour du client' })
+    res.status(500).json({ error: 'Erreur lors de la mise à jour du client' })
   }
 })
 
@@ -240,12 +220,12 @@ app.delete('/api/clients/:id', async (req, res) => {
     const { id } = req.params
     const clientId = parseInt(id)
 
-    // Récupérer tous les projets du client
+    // R�cup�rer tous les projets du client
     const projects = await prisma.project.findMany({
       where: { clientId: clientId }
     })
 
-    // Supprimer les tâches de chaque projet
+    // Supprimer les t�ches de chaque projet
     for (const project of projects) {
       await prisma.task.deleteMany({
         where: { projectId: project.id }
@@ -262,7 +242,7 @@ app.delete('/api/clients/:id', async (req, res) => {
       where: { id: clientId }
     })
 
-    res.json({ message: 'Client supprimé' })
+    res.json({ message: 'Client supprim�' })
   } catch (error) {
     console.error(error)
     res.status(500).json({ error: 'Erreur lors de la suppression du client' })
@@ -277,7 +257,7 @@ app.get('/api/suppliers', async (req, res) => {
     })
     res.json(suppliers)
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la rÃ©cupÃ©ration des fournisseurs' })
+    res.status(500).json({ error: 'Erreur lors de la récupération des fournisseurs' })
   }
 })
 
@@ -289,7 +269,7 @@ app.post('/api/suppliers', async (req, res) => {
     })
     res.status(201).json(supplier)
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la crÃ©ation du fournisseur' })
+    res.status(500).json({ error: 'Erreur lors de la création du fournisseur' })
   }
 })
 
@@ -302,7 +282,7 @@ app.patch('/api/suppliers/:id', async (req, res) => {
     })
     res.json(supplier)
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la mise Ã  jour du fournisseur' })
+    res.status(500).json({ error: 'Erreur lors de la mise à jour du fournisseur' })
   }
 })
 
@@ -312,13 +292,13 @@ app.delete('/api/suppliers/:id', async (req, res) => {
     await prisma.supplier.delete({
       where: { id: parseInt(id) }
     })
-    res.json({ message: 'Fournisseur supprimÃ©' })
+    res.json({ message: 'Fournisseur supprimé' })
   } catch (error) {
     res.status(500).json({ error: 'Erreur lors de la suppression du fournisseur' })
   }
 })
 
-// ===== ROUTES TÃ‚CHES =====
+// ===== ROUTES TÂCHES =====
 app.get('/api/tasks', async (req, res) => {
   try {
     const tasks = await prisma.task.findMany({
@@ -333,7 +313,7 @@ app.get('/api/tasks', async (req, res) => {
     })
     res.json(tasks)
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la rÃ©cupÃ©ration des tÃ¢ches' })
+    res.status(500).json({ error: 'Erreur lors de la récupération des tâches' })
   }
 })
 
@@ -359,7 +339,7 @@ app.post('/api/tasks', async (req, res) => {
     res.status(201).json(task)
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Erreur lors de la crÃ©ation de la tÃ¢che' })
+    res.status(500).json({ error: 'Erreur lors de la création de la tâche' })
   }
 })
 
@@ -369,12 +349,6 @@ app.patch('/api/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params
     const { title, description, priority, projectId, dueDate, completed } = req.body
-
-    // Récupérer l'ancienne valeur de completed avant mise à jour
-    const oldTask = await prisma.task.findUnique({
-      where: { id: parseInt(id) },
-      select: { completed: true }
-    })
 
     const updateData = {}
     if (title !== undefined) updateData.title = title
@@ -396,7 +370,7 @@ app.patch('/api/tasks/:id', async (req, res) => {
       }
     })
 
-    // Si le statut de complétion a changé, mettre à jour la progression du projet
+    // Si le statut de compl�tion a chang�, mettre � jour la progression du projet
     if (completed !== undefined && task.projectId) {
       const allProjectTasks = await prisma.task.findMany({
         where: { projectId: task.projectId }
@@ -413,22 +387,10 @@ app.patch('/api/tasks/:id', async (req, res) => {
       }
     }
 
-    // Envoyer un email si la tâche vient d'être terminée
-    if (completed === true && oldTask.completed === false) {
-      const user = await prisma.user.findFirst({
-        select: { email: true, name: true, taskNotifications: true }
-      })
-
-      if (user && user.taskNotifications) {
-        console.log('🔔 Envoi notification email pour tâche terminée...')
-        sendTaskCompletedEmail(user.email, user.name, task).catch(console.error)
-      }
-    }
-
     res.json(task)
   } catch (error) {
     console.error(error)
-    res.status(500).json({ error: 'Erreur lors de la mise à jour de la tâche' })
+    res.status(500).json({ error: 'Erreur lors de la mise � jour de la t�che' })
   }
 })
 
@@ -438,9 +400,9 @@ app.delete('/api/tasks/:id', async (req, res) => {
     await prisma.task.delete({
       where: { id: parseInt(id) }
     })
-    res.json({ message: 'TÃ¢che supprimÃ©e' })
+    res.json({ message: 'Tâche supprimée' })
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la suppression de la tÃ¢che' })
+    res.status(500).json({ error: 'Erreur lors de la suppression de la tâche' })
   }
 })
 
@@ -459,43 +421,13 @@ app.get('/api/stats', async (req, res) => {
       tasksCount
     })
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la rÃ©cupÃ©ration des statistiques' })
+    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' })
   }
 })
 
-// ===== ROUTES PARAMÈTRES UTILISATEUR =====
+// ===== ROUTES PARAM�TRES UTILISATEUR =====
 
-// Récupérer le premier utilisateur (utilisateur par défaut)
-app.get('/api/user/current', async (req, res) => {
-  try {
-    const user = await prisma.user.findFirst({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        emailNotifications: true,
-        projectNotifications: true,
-        taskNotifications: true,
-        theme: true,
-        primaryColor: true,
-        language: true,
-        timezone: true
-      }
-    })
-
-    if (!user) {
-      return res.status(404).json({ error: 'Aucun utilisateur trouvé' })
-    }
-
-    res.json(user)
-  } catch (error) {
-    console.error('Erreur lors de la récupération de l\'utilisateur:', error)
-    res.status(500).json({ error: 'Erreur lors de la récupération de l\'utilisateur' })
-  }
-})
-
-// Récupérer les paramètres d'un utilisateur
+// R�cup�rer les param�tres d'un utilisateur
 app.get('/api/user/:userId/settings', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId)
@@ -517,17 +449,17 @@ app.get('/api/user/:userId/settings', async (req, res) => {
     })
 
     if (!user) {
-      return res.status(404).json({ error: 'Utilisateur non trouvé' })
+      return res.status(404).json({ error: 'Utilisateur non trouv�' })
     }
 
     res.json(user)
   } catch (error) {
-    console.error('Erreur lors de la récupération des paramètres:', error)
-    res.status(500).json({ error: 'Erreur lors de la récupération des paramètres' })
+    console.error('Erreur lors de la r�cup�ration des param�tres:', error)
+    res.status(500).json({ error: 'Erreur lors de la r�cup�ration des param�tres' })
   }
 })
 
-// Mettre à jour le profil
+// Mettre � jour le profil
 app.patch('/api/user/:userId/profile', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId)
@@ -550,12 +482,12 @@ app.patch('/api/user/:userId/profile', async (req, res) => {
 
     res.json(user)
   } catch (error) {
-    console.error('Erreur lors de la mise à jour du profil:', error)
-    res.status(500).json({ error: 'Erreur lors de la mise à jour du profil' })
+    console.error('Erreur lors de la mise � jour du profil:', error)
+    res.status(500).json({ error: 'Erreur lors de la mise � jour du profil' })
   }
 })
 
-// Mettre à jour les préférences de notifications
+// Mettre � jour les pr�f�rences de notifications
 app.patch('/api/user/:userId/notifications', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId)
@@ -577,8 +509,8 @@ app.patch('/api/user/:userId/notifications', async (req, res) => {
 
     res.json(user)
   } catch (error) {
-    console.error('Erreur lors de la mise à jour des notifications:', error)
-    res.status(500).json({ error: 'Erreur lors de la mise à jour des notifications' })
+    console.error('Erreur lors de la mise � jour des notifications:', error)
+    res.status(500).json({ error: 'Erreur lors de la mise � jour des notifications' })
   }
 })
 
@@ -588,34 +520,34 @@ app.patch('/api/user/:userId/password', async (req, res) => {
     const userId = parseInt(req.params.userId)
     const { currentPassword, newPassword } = req.body
 
-    // Récupérer l'utilisateur actuel
+    // R�cup�rer l'utilisateur actuel
     const user = await prisma.user.findUnique({
       where: { id: userId }
     })
 
     if (!user) {
-      return res.status(404).json({ error: 'Utilisateur non trouvé' })
+      return res.status(404).json({ error: 'Utilisateur non trouv�' })
     }
 
-    // Vérifier le mot de passe actuel (en production, utiliser bcrypt)
+    // V�rifier le mot de passe actuel (en production, utiliser bcrypt)
     if (user.password !== currentPassword) {
       return res.status(400).json({ error: 'Mot de passe actuel incorrect' })
     }
 
-    // Mettre à jour le mot de passe (en production, hasher avec bcrypt)
+    // Mettre � jour le mot de passe (en production, hasher avec bcrypt)
     await prisma.user.update({
       where: { id: userId },
       data: { password: newPassword }
     })
 
-    res.json({ message: 'Mot de passe changé avec succès' })
+    res.json({ message: 'Mot de passe chang� avec succ�s' })
   } catch (error) {
     console.error('Erreur lors du changement de mot de passe:', error)
     res.status(500).json({ error: 'Erreur lors du changement de mot de passe' })
   }
 })
 
-// Mettre à jour les préférences d'apparence
+// Mettre � jour les pr�f�rences d'apparence
 app.patch('/api/user/:userId/appearance', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId)
@@ -635,12 +567,12 @@ app.patch('/api/user/:userId/appearance', async (req, res) => {
 
     res.json(user)
   } catch (error) {
-    console.error('Erreur lors de la mise à jour de l\'apparence:', error)
-    res.status(500).json({ error: 'Erreur lors de la mise à jour de l\'apparence' })
+    console.error('Erreur lors de la mise � jour de l\'apparence:', error)
+    res.status(500).json({ error: 'Erreur lors de la mise � jour de l\'apparence' })
   }
 })
 
-// Mettre à jour les paramètres généraux
+// Mettre � jour les param�tres g�n�raux
 app.patch('/api/user/:userId/general', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId)
@@ -660,24 +592,24 @@ app.patch('/api/user/:userId/general', async (req, res) => {
 
     res.json(user)
   } catch (error) {
-    console.error('Erreur lors de la mise à jour des paramètres généraux:', error)
-    res.status(500).json({ error: 'Erreur lors de la mise à jour des paramètres généraux' })
+    console.error('Erreur lors de la mise � jour des param�tres g�n�raux:', error)
+    res.status(500).json({ error: 'Erreur lors de la mise � jour des param�tres g�n�raux' })
   }
 })
 
 // Gestion des erreurs
 app.use((err, req, res, next) => {
   console.error(err.stack)
-  res.status(500).json({ error: 'Quelque chose s\'est mal passÃ©!' })
+  res.status(500).json({ error: 'Quelque chose s\'est mal passé!' })
 })
 
-// DÃ©marrage du serveur
+// Démarrage du serveur
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`ðŸš€ Serveur dÃ©marrÃ© sur le port ${PORT}`)
-  console.log(`ðŸ“ API disponible sur http://localhost:${PORT}/api`)
+  console.log(`🚀 Serveur démarré sur le port ${PORT}`)
+  console.log(`📍 API disponible sur http://localhost:${PORT}/api`)
 })
 
-// Gestion de l'arrÃªt propre
+// Gestion de l'arrêt propre
 process.on('beforeExit', async () => {
   await prisma.$disconnect()
 })

@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Variables de thème */
+:root {
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+}
+
 /* Styles personnalisés */
 body {
   margin: 0;
@@ -10,9 +16,88 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
+}
+
+/* Mode sombre */
+.dark body {
+  @apply bg-gray-900 text-gray-100;
+}
+
+.dark .bg-white {
+  @apply bg-gray-800 text-gray-100;
+}
+
+.dark .bg-gray-50 {
+  @apply bg-gray-700;
+}
+
+.dark .bg-gray-100 {
+  @apply bg-gray-700;
+}
+
+.dark .text-gray-900 {
+  @apply text-gray-100;
+}
+
+.dark .text-gray-800 {
+  @apply text-gray-200;
+}
+
+.dark .text-gray-700 {
+  @apply text-gray-300;
+}
+
+.dark .text-gray-600 {
+  @apply text-gray-400;
+}
+
+.dark .text-gray-500 {
+  @apply text-gray-400;
+}
+
+.dark .border-gray-200 {
+  @apply border-gray-700;
+}
+
+.dark .border-gray-300 {
+  @apply border-gray-600;
+}
+
+.dark .hover\:bg-gray-50:hover {
+  @apply bg-gray-700;
+}
+
+.dark .hover\:bg-gray-100:hover {
+  @apply bg-gray-700;
+}
+
+/* Utilisation de la couleur primaire dynamique */
+.bg-primary-600 {
+  background-color: var(--color-primary) !important;
+}
+
+.bg-primary-700 {
+  background-color: var(--color-primary-dark) !important;
+}
+
+.hover\:bg-primary-700:hover {
+  background-color: var(--color-primary-dark) !important;
+}
+
+.text-primary-600 {
+  color: var(--color-primary) !important;
+}
+
+.border-primary-500 {
+  border-color: var(--color-primary) !important;
+}
+
+.focus\:ring-primary-500:focus {
+  --tw-ring-color: var(--color-primary) !important;
 }
