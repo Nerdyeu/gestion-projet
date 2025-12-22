@@ -1,0 +1,99 @@
+// Schéma de base de données pour l'application de gestion de projet
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Modèle Utilisateur
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("user") // admin, user
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  projects  Project[]
+  tasks     Task[]
+}
+
+// Modèle Client
+model Client {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  phone     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  projects  Project[]
+}
+
+// Modèle Fournisseur
+model Supplier {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  phone     String?
+  category  String? // Informatique, Fournitures, Services, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Modèle Projet
+model Project {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  status      String   @default("En cours") // En cours, Terminé, En attente
+  progress    Int      @default(0)
+  deadline    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  clientId    Int?
+  client      Client?  @relation(fields: [clientId], references: [id])
+  
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  
+  tasks       Task[]
+}
+
+// Modèle Tâche
+model Task {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  priority    String   @default("Moyenne") // Haute, Moyenne, Basse
+  completed   Boolean  @default(false)
+  dueDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  projectId   Int
+  project     Project  @relation(fields: [projectId], references: [id])
+  
+  userId      Int?
+  user        User?    @relation(fields: [userId], references: [id])
+}
+
+// Modèle Événement (pour Outlook)
+model Event {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  type        String   @default("meeting") // meeting, presentation, deadline
+  outlookId   String?  @unique // ID de l'événement dans Outlook
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
