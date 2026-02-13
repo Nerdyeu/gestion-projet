@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💝 Une Question Importante 💝</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Animation de fond avec des cœurs */
+        @keyframes float {
+            0% {
+                transform: translateY(100vh) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 0.5;
+            }
+            90% {
+                opacity: 0.5;
+            }
+            100% {
+                transform: translateY(-100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        .background-heart {
+            position: fixed;
+            font-size: 20px;
+            animation: float linear infinite;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px 30px;
+            border-radius: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 90%;
+            width: 400px;
+            position: relative;
+            z-index: 10;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: scale(0.8);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .emoji {
+            font-size: 80px;
+            margin-bottom: 20px;
+            animation: bounce 1s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-10px);
+            }
+        }
+
+        h1 {
+            color: #e91e63;
+            font-size: 28px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+
+        p {
+            color: #555;
+            font-size: 18px;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            min-height: 60px;
+        }
+
+        button {
+            padding: 15px 40px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        #yesBtn {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+
+        #yesBtn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+        }
+
+        #noBtn {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #555;
+            position: absolute;
+            transition: all 0.2s ease;
+        }
+
+        #noBtn:hover {
+            transform: scale(1.05);
+        }
+
+        /* Page de succès */
+        .success-page {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #ff6b9d 0%, #c06c84 100%);
+            z-index: 100;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        .success-page.active {
+            display: flex;
+        }
+
+        .success-content {
+            text-align: center;
+            color: white;
+            z-index: 101;
+        }
+
+        .success-content h1 {
+            font-size: 48px;
+            color: white;
+            margin-bottom: 20px;
+            animation: popIn 0.6s ease-out;
+        }
+
+        @keyframes popIn {
+            0% {
+                transform: scale(0);
+            }
+            50% {
+                transform: scale(1.2);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        .success-content p {
+            font-size: 24px;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .big-emoji {
+            font-size: 120px;
+            margin-bottom: 30px;
+            animation: heartbeat 1.5s infinite;
+        }
+
+        @keyframes heartbeat {
+            0%, 100% {
+                transform: scale(1);
+            }
+            10%, 30% {
+                transform: scale(1.1);
+            }
+            20%, 40% {
+                transform: scale(1);
+            }
+        }
+
+        /* Cœurs flottants pour la page de succès */
+        .heart {
+            position: fixed;
+            font-size: 30px;
+            animation: floatUp 3s ease-in forwards;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .container {
+                padding: 30px 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            p {
+                font-size: 16px;
+            }
+
+            button {
+                padding: 12px 30px;
+                font-size: 16px;
+            }
+
+            .emoji {
+                font-size: 60px;
+            }
+
+            .success-content h1 {
+                font-size: 36px;
+            }
+
+            .success-content p {
+                font-size: 20px;
+            }
+
+            .big-emoji {
+                font-size: 80px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Cœurs de fond -->
+    <div id="backgroundHearts"></div>
+
+    <!-- Conteneur principal -->
+    <div class="container" id="mainContainer">
+        <div class="emoji">💕</div>
+        <h1>Veux-tu être ma Valentine ?</h1>
+        <p>Une petite question toute simple qui mérite une grande réponse... 😊</p>
+        <div class="buttons">
+            <button id="yesBtn">Oui ! 💖</button>
+            <button id="noBtn">Non...</button>
+        </div>
+    </div>
+
+    <!-- Page de succès -->
+    <div class="success-page" id="successPage">
+        <div class="success-content">
+            <div class="big-emoji">💝</div>
+            <h1>Yeaaaah ! 🎉</h1>
+            <p>Merci d'avoir dit oui !</p>
+            <p>Tu me rends tellement heureux(se) ! 💕✨</p>
+        </div>
+    </div>
+
+    <script>
+        // Créer des cœurs de fond animés
+        function createBackgroundHearts() {
+            const container = document.getElementById('backgroundHearts');
+            for (let i = 0; i < 15; i++) {
+                const heart = document.createElement('div');
+                heart.className = 'background-heart';
+                heart.textContent = '💕';
+                heart.style.left = Math.random() * 100 + '%';
+                heart.style.animationDuration = (Math.random() * 3 + 5) + 's';
+                heart.style.animationDelay = Math.random() * 5 + 's';
+                container.appendChild(heart);
+            }
+        }
+
+        createBackgroundHearts();
+
+        // Récupérer les éléments
+        const noBtn = document.getElementById('noBtn');
+        const yesBtn = document.getElementById('yesBtn');
+        const successPage = document.getElementById('successPage');
+        const mainContainer = document.getElementById('mainContainer');
+
+        // Fonction pour déplacer le bouton "Non"
+        function moveNoButton() {
+            const container = mainContainer.getBoundingClientRect();
+            const button = noBtn.getBoundingClientRect();
+
+            // Calculer les limites pour garder le bouton dans le conteneur
+            const maxX = container.width - button.width - 30;
+            const maxY = 100; // Limite verticale pour ne pas sortir de la zone des boutons
+
+            // Position aléatoire
+            const randomX = Math.random() * maxX - (maxX / 2);
+            const randomY = (Math.random() * maxY) - 50;
+
+            noBtn.style.transform = `translate(${randomX}px, ${randomY}px)`;
+        }
+
+        // Événement sur le bouton "Non"
+        noBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            moveNoButton();
+        });
+
+        // Événement sur le survol du bouton "Non" (pour mobile, on utilise touchstart)
+        noBtn.addEventListener('mouseenter', moveNoButton);
+        noBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            moveNoButton();
+        });
+
+        // Fonction pour créer des cœurs flottants
+        function createFloatingHeart() {
+            const heart = document.createElement('div');
+            heart.className = 'heart';
+            const hearts = ['💕', '💖', '💗', '💝', '💞', '❤️', '💓'];
+            heart.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+            heart.style.left = Math.random() * window.innerWidth + 'px';
+            heart.style.bottom = '0px';
+            heart.style.animationDuration = (Math.random() * 2 + 2) + 's';
+            document.body.appendChild(heart);
+
+            setTimeout(() => {
+                heart.remove();
+            }, 3000);
+        }
+
+        // Événement sur le bouton "Oui"
+        yesBtn.addEventListener('click', () => {
+            // Créer plein de cœurs
+            for (let i = 0; i < 50; i++) {
+                setTimeout(() => {
+                    createFloatingHeart();
+                }, i * 50);
+            }
+
+            // Afficher la page de succès après un court délai
+            setTimeout(() => {
+                successPage.classList.add('active');
+            }, 500);
+
+            // Continuer à créer des cœurs sur la page de succès
+            setInterval(() => {
+                createFloatingHeart();
+            }, 300);
+        });
+    </script>
+</body>
+</html>
