@@ -156,6 +156,51 @@ export default function SamsaraReport() {
     }
   }
 
+  async function testRawToken() {
+    if (!apiToken.trim()) return
+    setTestingConn(true)
+    setConnResult(null)
+    setConnDetails(null)
+    try {
+      const res = await fetch(`${API_URL}/api/samsara/test-raw`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiToken })
+      })
+      const data = await res.json()
+      const usOk = data.results?.US?.ok
+      const euOk = data.results?.EU?.ok
+      if (usOk || euOk) {
+        setConnResult('ok')
+        setConnDetails({
+          message: `Token valide sur ${usOk ? 'US' : 'EU'} ! Sauvegardez-le pour continuer.`,
+          ...data
+        })
+      } else {
+        setConnResult('error')
+        setConnDetails({
+          message: 'Token rejeté sur les deux régions',
+          rawTest: data,
+          results: {
+            US: { ok: false, status: data.results?.US?.status, message: JSON.stringify(data.results?.US?.body) },
+            EU: { ok: false, status: data.results?.EU?.status, message: JSON.stringify(data.results?.EU?.body) }
+          },
+          tokenLength: data.tokenLength,
+          tokenPrefix: data.tokenPrefix + '...' + data.tokenSuffix,
+          extraInfo: {
+            containsSpaces: data.tokenContainsSpaces,
+            startsWithSamsara: data.tokenStartsWithSamsara
+          }
+        })
+      }
+    } catch (err) {
+      setConnResult('error')
+      setConnDetails({ error: err.message })
+    } finally {
+      setTestingConn(false)
+    }
+  }
+
   async function detectRegion() {
     setTestingConn(true)
     setConnResult(null)
@@ -426,6 +471,15 @@ export default function SamsaraReport() {
               className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-orange-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {savingConfig ? 'Sauvegarde...' : 'Sauvegarder'}
+            </button>
+            <button
+              onClick={testRawToken}
+              disabled={!apiToken.trim() || testingConn}
+              className="px-5 py-2.5 bg-purple-50 border border-purple-200 text-purple-700 rounded-xl text-sm font-medium hover:bg-purple-100 transition-all flex items-center gap-2 disabled:opacity-50"
+              title="Teste le token tapé sans le sauvegarder"
+            >
+              <RefreshCw size={14} className={testingConn ? 'animate-spin' : ''} />
+              Tester ce token
             </button>
             {configStatus === 'configured' && (
               <>

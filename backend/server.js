@@ -75,6 +75,47 @@ app.post('/api/samsara/config', async (req, res) => {
   }
 })
 
+// Test direct d'un token sans passer par la BDD
+app.post('/api/samsara/test-raw', async (req, res) => {
+  try {
+    const { apiToken } = req.body
+    if (!apiToken) return res.status(400).json({ error: 'Token requis' })
+    const cleanToken = apiToken.trim().replace(/[\r\n\t]/g, '')
+
+    const results = {}
+    for (const region of ['US', 'EU']) {
+      const base = REGION_BASES[region]
+      const url = `${base}/fleet/vehicles?limit=1`
+      try {
+        const r = await fetch(url, {
+          headers: { Authorization: `Bearer ${cleanToken}`, 'Content-Type': 'application/json' }
+        })
+        const text = await r.text()
+        let body
+        try { body = JSON.parse(text) } catch { body = text }
+        results[region] = {
+          status: r.status,
+          ok: r.ok,
+          body: r.ok ? { vehicleCount: body?.data?.length ?? 0 } : body
+        }
+      } catch (err) {
+        results[region] = { error: err.message }
+      }
+    }
+
+    res.json({
+      tokenLength: cleanToken.length,
+      tokenPrefix: cleanToken.slice(0, 16),
+      tokenSuffix: cleanToken.slice(-6),
+      tokenContainsSpaces: /\s/.test(apiToken),
+      tokenStartsWithSamsara: cleanToken.startsWith('samsara_api_'),
+      results
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // Détection automatique de la bonne région
 app.get('/api/samsara/detect-region', async (req, res) => {
   try {
