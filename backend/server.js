@@ -9,7 +9,10 @@ const app = express()
 const PORT = process.env.PORT || 4001
 const prisma = new PrismaClient()
 
-const SAMSARA_BASE = 'https://api.samsara.com'
+const REGION_BASES = {
+  US: 'https://api.samsara.com',
+  EU: 'https://api.eu.samsara.com'
+}
 
 app.use(cors())
 app.use(express.json())
@@ -18,93 +21,122 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK' })
 })
 
-async function getSamsaraToken() {
+async function getSamsaraConfig() {
   const config = await prisma.samsaraConfig.findFirst()
-  return config?.apiToken || null
+  if (!config) return null
+  return { token: config.apiToken, region: config.region || 'US' }
 }
 
-async function samsaraFetch(path, token, params = {}) {
-  const url = new URL(`${SAMSARA_BASE}${path}`)
+async function samsaraFetch(path, config, params = {}) {
+  const base = REGION_BASES[config.region] || REGION_BASES.US
+  const url = new URL(`${base}${path}`)
   Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v))
+  console.log(`[Samsara] ${url.toString()}`)
   const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+    headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' }
   })
+  const text = await res.text()
+  let body
+  try { body = JSON.parse(text) } catch { body = text }
   if (!res.ok) {
-    const text = await res.text()
-    throw { status: res.status, message: text }
+    console.error(`[Samsara] ${res.status} ${url.toString()} → ${text.slice(0, 300)}`)
+    throw { status: res.status, message: typeof body === 'string' ? body : (body.message || JSON.stringify(body)) }
   }
-  return res.json()
+  return body
 }
 
-// Récupérer la config (token masqué)
 app.get('/api/samsara/config', async (req, res) => {
   try {
     const config = await prisma.samsaraConfig.findFirst()
-    if (!config) return res.json({ configured: false })
+    if (!config) return res.json({ configured: false, region: 'US' })
     const token = config.apiToken
     const masked = token.length > 8 ? token.slice(0, 4) + '****' + token.slice(-4) : '****'
-    res.json({ configured: true, maskedToken: masked })
+    res.json({ configured: true, maskedToken: masked, region: config.region || 'US' })
   } catch {
     res.status(500).json({ error: 'Erreur configuration' })
   }
 })
 
-// Sauvegarder le token
 app.post('/api/samsara/config', async (req, res) => {
   try {
-    const { apiToken } = req.body
+    const { apiToken, region } = req.body
     if (!apiToken) return res.status(400).json({ error: 'Token API requis' })
+    const r = region === 'EU' ? 'EU' : 'US'
     await prisma.samsaraConfig.upsert({
       where: { id: 1 },
-      update: { apiToken },
-      create: { id: 1, apiToken }
+      update: { apiToken, region: r },
+      create: { id: 1, apiToken, region: r }
     })
-    res.json({ configured: true })
-  } catch {
+    res.json({ configured: true, region: r })
+  } catch (err) {
+    console.error(err)
     res.status(500).json({ error: 'Erreur sauvegarde' })
   }
 })
 
-// Tester la connexion
 app.get('/api/samsara/test', async (req, res) => {
   try {
-    const token = await getSamsaraToken()
-    if (!token) return res.status(400).json({ error: 'Non configuré' })
-    await samsaraFetch('/fleet/vehicles', token, { limit: '1' })
-    res.json({ success: true })
+    const config = await getSamsaraConfig()
+    if (!config) return res.status(400).json({ error: 'Non configuré' })
+    const data = await samsaraFetch('/fleet/vehicles', config, { limit: '1' })
+    res.json({
+      success: true,
+      region: config.region,
+      vehiclesInResponse: data?.data?.length ?? 0,
+      hasNextPage: !!data?.pagination?.hasNextPage
+    })
   } catch (err) {
     res.status(err.status || 500).json({ error: 'Connexion échouée', details: err.message })
   }
 })
 
-// Liste des véhicules
+// Endpoint de debug : voir la réponse brute Samsara
+app.get('/api/samsara/debug/vehicles', async (req, res) => {
+  try {
+    const config = await getSamsaraConfig()
+    if (!config) return res.status(400).json({ error: 'Non configuré' })
+    const data = await samsaraFetch('/fleet/vehicles', config, { limit: '10' })
+    res.json({
+      region: config.region,
+      baseUrl: REGION_BASES[config.region],
+      rawResponse: data,
+      vehicleCount: data?.data?.length ?? 0
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Erreur debug', details: err.message, status: err.status })
+  }
+})
+
 app.get('/api/samsara/vehicles', async (req, res) => {
   try {
-    const token = await getSamsaraToken()
-    if (!token) return res.status(400).json({ error: 'Non configuré' })
+    const config = await getSamsaraConfig()
+    if (!config) return res.status(400).json({ error: 'Non configuré' })
     let vehicles = []
     let cursor = null
+    let pages = 0
     do {
       const params = { limit: '512' }
       if (cursor) params.after = cursor
-      const data = await samsaraFetch('/fleet/vehicles', token, params)
+      const data = await samsaraFetch('/fleet/vehicles', config, params)
       vehicles = vehicles.concat(data.data || [])
       cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null
+      pages++
+      if (pages > 50) break
     } while (cursor)
+    console.log(`[Samsara] ${vehicles.length} véhicules récupérés (${pages} page(s))`)
     res.json({ data: vehicles })
   } catch (err) {
     res.status(err.status || 500).json({ error: 'Erreur véhicules', details: err.message })
   }
 })
 
-// Rapport de consommation
 app.get('/api/samsara/fuel-report', async (req, res) => {
   try {
     const { startDate, endDate, vehicleIds, metrics } = req.query
     if (!startDate || !endDate) return res.status(400).json({ error: 'Dates requises' })
 
-    const token = await getSamsaraToken()
-    if (!token) return res.status(400).json({ error: 'Non configuré' })
+    const config = await getSamsaraConfig()
+    if (!config) return res.status(400).json({ error: 'Non configuré' })
 
     const types = (metrics || 'fuelPercents,obdOdometerMeters,obdEngineSeconds')
     const startTime = new Date(startDate).toISOString()
@@ -112,13 +144,16 @@ app.get('/api/samsara/fuel-report', async (req, res) => {
 
     let allData = []
     let cursor = null
+    let pages = 0
     do {
       const params = { startTime, endTime, types, limit: '512' }
       if (vehicleIds) params.vehicleIds = vehicleIds
       if (cursor) params.after = cursor
-      const data = await samsaraFetch('/fleet/vehicles/stats/history', token, params)
+      const data = await samsaraFetch('/fleet/vehicles/stats/history', config, params)
       allData = allData.concat(data.data || [])
       cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null
+      pages++
+      if (pages > 50) break
     } while (cursor)
 
     const report = allData.map(vehicle => {

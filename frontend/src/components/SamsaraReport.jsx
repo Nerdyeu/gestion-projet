@@ -54,9 +54,11 @@ export default function SamsaraReport() {
   const [showToken, setShowToken] = useState(false)
   const [configStatus, setConfigStatus] = useState(null) // null | 'configured' | 'unconfigured'
   const [maskedToken, setMaskedToken] = useState('')
+  const [region, setRegion] = useState('US')
   const [savingConfig, setSavingConfig] = useState(false)
   const [testingConn, setTestingConn] = useState(false)
   const [connResult, setConnResult] = useState(null) // null | 'ok' | 'error'
+  const [connDetails, setConnDetails] = useState(null)
 
   // Vehicles
   const [vehicles, setVehicles] = useState([])
@@ -89,6 +91,7 @@ export default function SamsaraReport() {
     try {
       const res = await fetch(`${API_URL}/api/samsara/config`)
       const data = await res.json()
+      if (data.region) setRegion(data.region)
       if (data.configured) {
         setConfigStatus('configured')
         setMaskedToken(data.maskedToken)
@@ -107,26 +110,50 @@ export default function SamsaraReport() {
       const res = await fetch(`${API_URL}/api/samsara/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken: apiToken.trim() })
+        body: JSON.stringify({ apiToken: apiToken.trim(), region })
       })
       if (res.ok) {
         await loadConfig()
         setApiToken('')
         setConnResult(null)
+        setConnDetails(null)
       }
     } finally {
       setSavingConfig(false)
     }
   }
 
+  async function changeRegion(newRegion) {
+    setRegion(newRegion)
+    if (configStatus === 'configured') {
+      // Mettre à jour la région sur le serveur sans changer le token
+      try {
+        const tokenRes = await fetch(`${API_URL}/api/samsara/config`)
+        const cfg = await tokenRes.json()
+        if (cfg.configured) {
+          // On a besoin du vrai token pour réenregistrer — on demande à l'utilisateur de re-saisir
+          // Astuce : on fait juste un test avec la nouvelle région côté serveur via un endpoint dédié
+        }
+      } catch {}
+    }
+  }
+
   async function testConnection() {
     setTestingConn(true)
     setConnResult(null)
+    setConnDetails(null)
     try {
       const res = await fetch(`${API_URL}/api/samsara/test`)
+      const data = await res.json()
       setConnResult(res.ok ? 'ok' : 'error')
-    } catch {
+      setConnDetails(data)
+      if (res.ok) {
+        // Recharger la liste des véhicules
+        loadVehicles()
+      }
+    } catch (err) {
       setConnResult('error')
+      setConnDetails({ error: err.message })
     } finally {
       setTestingConn(false)
     }
@@ -311,49 +338,104 @@ export default function SamsaraReport() {
           )}
         </div>
 
-        <div className="flex gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-64">
-            <input
-              type={showToken ? 'text' : 'password'}
-              value={apiToken}
-              onChange={e => setApiToken(e.target.value)}
-              placeholder="samsara_api_XXXXXXXXXXXXXXXXXXXXXXXXXX"
-              className="w-full pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent font-mono"
-            />
-            <button
-              onClick={() => setShowToken(v => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-            >
-              {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
+        <div className="space-y-3">
+          {/* Sélecteur de région */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Région de votre compte Samsara</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRegion('US')}
+                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                  region === 'US'
+                    ? 'bg-orange-50 border-orange-300 text-orange-700 ring-2 ring-orange-200'
+                    : 'bg-white border-gray-200 text-slate-600 hover:border-gray-300'
+                }`}
+              >
+                🇺🇸 États-Unis (api.samsara.com)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegion('EU')}
+                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${
+                  region === 'EU'
+                    ? 'bg-orange-50 border-orange-300 text-orange-700 ring-2 ring-orange-200'
+                    : 'bg-white border-gray-200 text-slate-600 hover:border-gray-300'
+                }`}
+              >
+                🇪🇺 Europe (api.eu.samsara.com)
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Si vous êtes en Europe, sélectionnez Europe. Un mauvais choix donne 0 véhicule.
+            </p>
           </div>
-          <button
-            onClick={saveConfig}
-            disabled={!apiToken.trim() || savingConfig}
-            className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-orange-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {savingConfig ? 'Sauvegarde...' : 'Sauvegarder'}
-          </button>
-          {configStatus === 'configured' && (
+
+          <div className="flex gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-64">
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={apiToken}
+                onChange={e => setApiToken(e.target.value)}
+                placeholder="samsara_api_XXXXXXXXXXXXXXXXXXXXXXXXXX"
+                className="w-full pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent font-mono"
+              />
+              <button
+                onClick={() => setShowToken(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
             <button
-              onClick={testConnection}
-              disabled={testingConn}
-              className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-all flex items-center gap-2 disabled:opacity-50"
+              onClick={saveConfig}
+              disabled={!apiToken.trim() || savingConfig}
+              className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-orange-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RefreshCw size={14} className={testingConn ? 'animate-spin' : ''} />
-              Tester
+              {savingConfig ? 'Sauvegarde...' : 'Sauvegarder'}
             </button>
+            {configStatus === 'configured' && (
+              <button
+                onClick={testConnection}
+                disabled={testingConn}
+                className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={testingConn ? 'animate-spin' : ''} />
+                Tester
+              </button>
+            )}
+          </div>
+
+          {configStatus === 'configured' && (
+            <p className="text-xs text-slate-500">
+              Pour changer le token ou la région, saisissez un nouveau token et cliquez Sauvegarder.
+            </p>
           )}
         </div>
 
         {connResult === 'ok' && (
-          <div className="mt-3 flex items-center gap-2 text-green-600 text-sm">
-            <CheckCircle2 size={15} /> Connexion Samsara réussie
+          <div className="mt-3 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700">
+            <div className="flex items-center gap-2 font-medium">
+              <CheckCircle2 size={15} /> Connexion Samsara réussie
+            </div>
+            {connDetails && (
+              <p className="text-xs text-green-600 mt-1 ml-6">
+                Région : {connDetails.region} · Véhicules détectés dans le test : {connDetails.vehiclesInResponse ?? 0}
+              </p>
+            )}
           </div>
         )}
         {connResult === 'error' && (
-          <div className="mt-3 flex items-center gap-2 text-red-600 text-sm">
-            <XCircle size={15} /> Connexion échouée — vérifiez votre token
+          <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
+            <div className="flex items-center gap-2 text-red-700 font-medium">
+              <XCircle size={15} /> Connexion échouée
+            </div>
+            {connDetails?.details && (
+              <pre className="text-xs text-red-600 mt-1 ml-6 whitespace-pre-wrap break-all">{connDetails.details}</pre>
+            )}
+            <p className="text-xs text-red-600 mt-1 ml-6">
+              Vérifiez : (1) le token est valide, (2) la région est correcte (US ou EU), (3) le token a les permissions "Read vehicle stats".
+            </p>
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ datasource db {
 model SamsaraConfig {
   id        Int      @id @default(autoincrement())
   apiToken  String
+  region    String   @default("US") // US ou EU
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
