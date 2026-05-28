@@ -456,6 +456,13 @@ export default function SamsaraReport() {
                 value={apiToken}
                 onChange={e => setApiToken(e.target.value)}
                 placeholder="samsara_api_XXXXXXXXXXXXXXXXXXXXXXXXXX"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
+                name="samsara-token-no-autofill"
+                data-lpignore="true"
+                data-form-type="other"
                 className="w-full pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-transparent font-mono"
               />
               <button
