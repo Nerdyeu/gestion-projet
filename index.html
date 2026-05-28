@@ -19,7 +19,7 @@
     <div class="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow text-white text-xl">🚛</div>
     <div>
       <h1 class="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
-      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v5 · 2026-05-28</span></p>
+      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v6 · 2026-05-28</span></p>
     </div>
   </div>
 </header>
@@ -104,12 +104,14 @@
       <div>
         <label class="block text-sm font-medium text-slate-700 mb-2">
           🚛 Véhicules <span id="vehiclesLoading" class="text-xs text-slate-400 hidden">(chargement…)</span>
+          <span id="vehiclesCount" class="text-xs text-orange-600 font-medium ml-2"></span>
         </label>
-        <select id="vehicleSelect" multiple size="6" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"></select>
+        <p class="text-xs text-slate-500 mb-2">💡 <strong>Ctrl+clic</strong> (ou <strong>Cmd+clic</strong> sur Mac) pour sélectionner plusieurs véhicules. <strong>Shift+clic</strong> pour une plage.</p>
+        <select id="vehicleSelect" multiple size="10" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"></select>
         <div class="flex gap-2 mt-2">
-          <button id="selectAllVehicles" class="text-xs text-orange-600 hover:underline">Tout sélectionner</button>
+          <button id="selectAllVehicles" class="text-xs text-orange-600 hover:underline">✓ Tout sélectionner</button>
           <span class="text-xs text-slate-300">|</span>
-          <button id="clearVehicles" class="text-xs text-slate-500 hover:underline">Tout désélectionner (= tous)</button>
+          <button id="clearVehicles" class="text-xs text-slate-500 hover:underline">Tout désélectionner</button>
           <button id="reloadVehicles" class="ml-auto text-xs text-blue-600 hover:underline">🔄 Recharger</button>
         </div>
         <p class="text-xs text-slate-400 mt-1">Aucune sélection = tous les véhicules</p>
@@ -132,19 +134,11 @@
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-2">💶 Calcul de coût (optionnel)</label>
+        <label class="block text-sm font-medium text-slate-700 mb-2">⛽ Paramètres rapport</label>
         <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">Prix carburant (€/L)</label>
-            <input type="number" id="fuelPrice" value="1.85" step="0.01" min="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-          </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Capacité réservoir (L)</label>
             <input type="number" id="tankCapacity" value="80" step="1" min="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
-          </div>
-          <div>
-            <label class="block text-xs text-slate-500 mb-1">CO2 (kg/L diesel)</label>
-            <input type="number" id="co2Factor" value="2.65" step="0.01" min="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
           </div>
           <div>
             <label class="block text-xs text-slate-500 mb-1">Nom de l'entreprise (rapport)</label>
@@ -349,11 +343,22 @@ async function loadVehicles() {
       opt.textContent = (v.name || v.id) + (v.licensePlate ? ' — ' + v.licensePlate : '');
       sel.appendChild(opt);
     });
+    updateVehicleCount();
   } catch (err) {
     console.error(err);
   } finally {
     document.getElementById('vehiclesLoading').classList.add('hidden');
   }
+}
+
+function updateVehicleCount() {
+  const sel = document.getElementById('vehicleSelect');
+  const total = sel.options.length;
+  const selected = Array.from(sel.selectedOptions).length;
+  const el = document.getElementById('vehiclesCount');
+  if (!el) return;
+  if (selected === 0) el.textContent = '(' + total + ' disponibles — aucun sélectionné = tous)';
+  else el.textContent = '(' + selected + '/' + total + ' sélectionnés)';
 }
 
 function applyQuickRange(opts) {
@@ -466,8 +471,8 @@ function monthRanges(startStr, endStr) {
   return months;
 }
 
-function computeVehicleMonth(stats, cap, price, co2) {
-  const res = { liters: null, km: null, hours: null, cost: null, co2: null, lPer100: null, fuelRate: null };
+function computeVehicleMonth(stats, cap) {
+  const res = { liters: null, km: null, hours: null, lPer100: null, fuelRate: null, idleHours: null, ptoHours: null, idlePct: null, ptoPct: null };
   if (stats.fuelPercents?.length >= 2 && cap > 0) {
     const s = [...stats.fuelPercents].sort((a, b) => new Date(a.time) - new Date(b.time));
     const fs = s[0].value?.percentage ?? null;
@@ -476,8 +481,6 @@ function computeVehicleMonth(stats, cap, price, co2) {
       const delta = fs - fe;
       res.liters = +((delta / 100) * cap).toFixed(2);
       if (res.liters < 0) res.liters = 0;
-      res.cost = +(res.liters * price).toFixed(2);
-      res.co2 = +(res.liters * co2).toFixed(1);
     }
   }
   if (stats.obdOdometerMeters?.length >= 2) {
@@ -490,8 +493,20 @@ function computeVehicleMonth(stats, cap, price, co2) {
     const a = s[0].value?.engineSeconds, b = s[s.length - 1].value?.engineSeconds;
     if (a != null && b != null) res.hours = +((b - a) / 3600).toFixed(2);
   }
+  if (Array.isArray(stats.engineStates) && stats.engineStates.length >= 2) {
+    const s = [...stats.engineStates].sort((a, b) => new Date(a.time) - new Date(b.time));
+    let idleSec = 0;
+    for (let i = 0; i < s.length - 1; i++) {
+      const v = s[i].value;
+      const name = typeof v === 'string' ? v : (v?.value || v?.engineState || v?.gpsState || '');
+      if (name === 'Idle') idleSec += (new Date(s[i + 1].time) - new Date(s[i].time)) / 1000;
+    }
+    res.idleHours = +(idleSec / 3600).toFixed(2);
+  }
   if (res.liters != null && res.km > 0) res.lPer100 = +((res.liters / res.km) * 100).toFixed(1);
   if (res.liters != null && res.hours > 0) res.fuelRate = +(res.liters / res.hours).toFixed(2);
+  if (res.idleHours != null && res.hours > 0) res.idlePct = +((res.idleHours / res.hours) * 100).toFixed(1);
+  if (res.ptoHours != null && res.hours > 0) res.ptoPct = +((res.ptoHours / res.hours) * 100).toFixed(1);
   return res;
 }
 
@@ -504,25 +519,29 @@ function formatHMin(hours) {
 
 async function generateComparativeReport(startDate, endDate, vehicleIds) {
   const cap = parseFloat(document.getElementById('tankCapacity').value) || 0;
-  const price = parseFloat(document.getElementById('fuelPrice').value) || 0;
-  const co2 = parseFloat(document.getElementById('co2Factor').value) || 0;
   const company = document.getElementById('companyName').value.trim() || 'Flotte';
 
   const months = monthRanges(startDate, endDate);
   if (months.length === 0) throw new Error('Période invalide');
 
-  const allMetrics = ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds'];
+  const allMetrics = ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds', 'engineStates'];
   const matrix = [];
   for (let i = 0; i < months.length; i++) {
     const m = months[i];
     document.getElementById('generateLabel').textContent = 'Mois ' + (i + 1) + '/' + months.length + '…';
-    const raw = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, allMetrics);
+    let raw = [];
+    try {
+      raw = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, allMetrics);
+    } catch (err) {
+      // engineStates non supporté → on retombe sans cette métrique
+      raw = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds']);
+    }
     const perVehicle = {};
     raw.forEach(v => {
       perVehicle[v.id] = {
         id: v.id,
         name: v.name || v.id,
-        ...computeVehicleMonth(v, cap, price, co2)
+        ...computeVehicleMonth(v, cap)
       };
     });
     matrix.push({ ...m, perVehicle });
@@ -576,9 +595,11 @@ function renderComparative() {
     { key: 'liters', label: 'Consommation totale', unit: 'L', dec: 1, color: 'text-blue-700' },
     { key: 'km', label: 'Distance parcourue', unit: 'km', dec: 1, color: 'text-blue-700' },
     { key: 'lPer100', label: 'Efficacité globale', unit: 'L/100km', dec: 1, color: 'text-blue-700' },
-    { key: 'cost', label: 'Coût carburant', unit: '€', dec: 2, color: 'text-blue-700' },
-    { key: 'co2', label: 'Émissions CO2', unit: 'kg', dec: 1, color: 'text-blue-700' },
     { key: 'hours', label: 'Durée moteur totale', unit: 'h', dec: 2, color: 'text-blue-700', hmin: true },
+    { key: 'ptoHours', label: 'Temps PTO/AUX', unit: 'h', dec: 2, color: 'text-orange-500', hmin: true },
+    { key: 'idleHours', label: 'Temps d\'inactivité', unit: 'h', dec: 2, color: 'text-blue-700', hmin: true },
+    { key: 'ptoPct', label: '% Temps PTO', unit: '%', dec: 1, color: 'text-orange-500', pct: true },
+    { key: 'idlePct', label: '% Temps inactivité', unit: '%', dec: 1, color: 'text-orange-500', pct: true },
     { key: 'fuelRate', label: 'Fuel Rate moyen', unit: 'L/h', dec: 2, color: 'text-emerald-600' }
   ];
 
@@ -605,6 +626,7 @@ function renderComparative() {
         let txt = '—';
         if (val != null && !isNaN(val)) {
           if (rowDef.hmin) txt = formatHMin(val);
+          else if (rowDef.pct) txt = fmt(val, rowDef.dec) + '%';
           else txt = fmt(val, rowDef.dec);
         }
         html += '<td class="py-2 px-2 text-right ' + rowDef.color + '">' + txt + '</td>';
@@ -631,9 +653,11 @@ function exportComparativeCSV() {
     { key: 'liters', label: 'Consommation totale (L)' },
     { key: 'km', label: 'Distance parcourue (km)' },
     { key: 'lPer100', label: 'Efficacité globale (L/100km)' },
-    { key: 'cost', label: 'Coût carburant (€)' },
-    { key: 'co2', label: 'Émissions CO2 (kg)' },
     { key: 'hours', label: 'Durée moteur totale (h)' },
+    { key: 'ptoHours', label: 'Temps PTO/AUX (h)' },
+    { key: 'idleHours', label: 'Temps d\'inactivité (h)' },
+    { key: 'ptoPct', label: '% Temps PTO' },
+    { key: 'idlePct', label: '% Temps inactivité' },
     { key: 'fuelRate', label: 'Fuel Rate moyen (L/h)' }
   ];
   const lines = [];
@@ -670,7 +694,7 @@ function exportComparativeCSV() {
 function renderResults() {
   const r = state.report;
   if (!r) return;
-  const price = parseFloat(document.getElementById('fuelPrice').value) || 0;
+  const price = parseFloat(document.getElementById('fuelPrice')?.value) || 0;
   const cap = parseFloat(document.getElementById('tankCapacity').value) || 0;
   const showFuel = r.metrics.includes('fuelPercents');
   const showDist = r.metrics.includes('obdOdometerMeters');
@@ -770,7 +794,7 @@ function exportCSV() {
   if (!state.report) return;
   if (state.report.mode === 'comparative') return exportComparativeCSV();
   const r = state.report;
-  const price = parseFloat(document.getElementById('fuelPrice').value) || 0;
+  const price = parseFloat(document.getElementById('fuelPrice')?.value) || 0;
   const cap = parseFloat(document.getElementById('tankCapacity').value) || 0;
   const showFuel = r.metrics.includes('fuelPercents');
   const showDist = r.metrics.includes('obdOdometerMeters');
@@ -852,10 +876,13 @@ document.querySelectorAll('.quick-range').forEach(b => {
 });
 document.getElementById('selectAllVehicles').addEventListener('click', () => {
   Array.from(document.getElementById('vehicleSelect').options).forEach(o => o.selected = true);
+  updateVehicleCount();
 });
 document.getElementById('clearVehicles').addEventListener('click', () => {
   Array.from(document.getElementById('vehicleSelect').options).forEach(o => o.selected = false);
+  updateVehicleCount();
 });
+document.getElementById('vehicleSelect').addEventListener('change', updateVehicleCount);
 document.getElementById('reloadVehicles').addEventListener('click', loadVehicles);
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm('Effacer le token et la région stockés dans le navigateur ?')) return;
