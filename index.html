@@ -19,7 +19,7 @@
     <div class="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow text-white text-xl">🚛</div>
     <div>
       <h1 class="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
-      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v4 · 2026-05-28</span></p>
+      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v5 · 2026-05-28</span></p>
     </div>
   </div>
 </header>
@@ -142,11 +142,23 @@
             <label class="block text-xs text-slate-500 mb-1">Capacité réservoir (L)</label>
             <input type="number" id="tankCapacity" value="80" step="1" min="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
           </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">CO2 (kg/L diesel)</label>
+            <input type="number" id="co2Factor" value="2.65" step="0.01" min="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Nom de l'entreprise (rapport)</label>
+            <input type="text" id="companyName" value="Flamme Assainissement" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="mt-6 flex justify-end">
+    <div class="mt-6 flex flex-col sm:flex-row gap-2 sm:justify-between sm:items-center">
+      <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+        <input type="checkbox" id="comparativeMode" class="accent-orange-500 w-4 h-4" />
+        <span>📊 <strong>Rapport comparatif multi-mois</strong> — découpe la période en mois et affiche les véhicules en colonnes</span>
+      </label>
       <button id="generateBtn" class="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-medium hover:shadow-lg flex items-center gap-2 disabled:opacity-50">
         📈 <span id="generateLabel">Générer le rapport</span>
       </button>
@@ -165,7 +177,7 @@
       </div>
       <button id="exportBtn" class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50">⬇️ Exporter CSV</button>
     </div>
-    <div id="summaryCards" class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 border-b border-gray-100"></div>
+    <div id="summaryCards" class="border-b border-gray-100"></div>
     <div id="tableContainer" class="overflow-x-auto"></div>
   </section>
 
@@ -366,13 +378,14 @@ async function generateReport() {
   const endDate = document.getElementById('endDate').value;
   const metrics = Array.from(document.querySelectorAll('.metric:checked')).map(c => c.value);
   const vehicleIds = Array.from(document.getElementById('vehicleSelect').selectedOptions).map(o => o.value);
+  const comparative = document.getElementById('comparativeMode').checked;
 
   if (!startDate || !endDate) {
     document.getElementById('reportError').textContent = 'Sélectionnez une période';
     document.getElementById('reportError').classList.remove('hidden');
     return;
   }
-  if (metrics.length === 0) {
+  if (metrics.length === 0 && !comparative) {
     document.getElementById('reportError').textContent = 'Sélectionnez au moins une métrique';
     document.getElementById('reportError').classList.remove('hidden');
     return;
@@ -381,6 +394,19 @@ async function generateReport() {
   document.getElementById('reportError').classList.add('hidden');
   document.getElementById('generateLabel').textContent = 'Génération...';
   document.getElementById('generateBtn').disabled = true;
+
+  if (comparative) {
+    try {
+      await generateComparativeReport(startDate, endDate, vehicleIds);
+    } catch (err) {
+      document.getElementById('reportError').innerHTML = '<strong class="text-red-700">Erreur :</strong> <span class="text-red-600">' + (err.message || err) + '</span>';
+      document.getElementById('reportError').classList.remove('hidden');
+    } finally {
+      document.getElementById('generateLabel').textContent = 'Générer le rapport';
+      document.getElementById('generateBtn').disabled = false;
+    }
+    return;
+  }
 
   try {
     const rawData = await fetchStats(startDate, endDate, vehicleIds, metrics);
@@ -415,6 +441,232 @@ async function generateReport() {
   }
 }
 
+// ============ Rapport comparatif multi-mois ============
+function monthRanges(startStr, endStr) {
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T23:59:59');
+  const months = [];
+  const FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cur <= end) {
+    const mStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
+    const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0, 23, 59, 59);
+    const a = mStart < start ? start : mStart;
+    const b = mEnd > end ? end : mEnd;
+    months.push({
+      key: cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0'),
+      label: FR[cur.getMonth()] + ' ' + cur.getFullYear(),
+      startISO: a.toISOString(),
+      endISO: b.toISOString(),
+      startDate: a.toISOString().slice(0, 10),
+      endDate: b.toISOString().slice(0, 10)
+    });
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  return months;
+}
+
+function computeVehicleMonth(stats, cap, price, co2) {
+  const res = { liters: null, km: null, hours: null, cost: null, co2: null, lPer100: null, fuelRate: null };
+  if (stats.fuelPercents?.length >= 2 && cap > 0) {
+    const s = [...stats.fuelPercents].sort((a, b) => new Date(a.time) - new Date(b.time));
+    const fs = s[0].value?.percentage ?? null;
+    const fe = s[s.length - 1].value?.percentage ?? null;
+    if (fs != null && fe != null) {
+      const delta = fs - fe;
+      res.liters = +((delta / 100) * cap).toFixed(2);
+      if (res.liters < 0) res.liters = 0;
+      res.cost = +(res.liters * price).toFixed(2);
+      res.co2 = +(res.liters * co2).toFixed(1);
+    }
+  }
+  if (stats.obdOdometerMeters?.length >= 2) {
+    const s = [...stats.obdOdometerMeters].sort((a, b) => new Date(a.time) - new Date(b.time));
+    const a = s[0].value?.meters, b = s[s.length - 1].value?.meters;
+    if (a != null && b != null) res.km = +((b - a) / 1000).toFixed(2);
+  }
+  if (stats.obdEngineSeconds?.length >= 2) {
+    const s = [...stats.obdEngineSeconds].sort((a, b) => new Date(a.time) - new Date(b.time));
+    const a = s[0].value?.engineSeconds, b = s[s.length - 1].value?.engineSeconds;
+    if (a != null && b != null) res.hours = +((b - a) / 3600).toFixed(2);
+  }
+  if (res.liters != null && res.km > 0) res.lPer100 = +((res.liters / res.km) * 100).toFixed(1);
+  if (res.liters != null && res.hours > 0) res.fuelRate = +(res.liters / res.hours).toFixed(2);
+  return res;
+}
+
+function formatHMin(hours) {
+  if (hours == null || isNaN(hours)) return '—';
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return h + 'h ' + String(m).padStart(2, '0') + 'min';
+}
+
+async function generateComparativeReport(startDate, endDate, vehicleIds) {
+  const cap = parseFloat(document.getElementById('tankCapacity').value) || 0;
+  const price = parseFloat(document.getElementById('fuelPrice').value) || 0;
+  const co2 = parseFloat(document.getElementById('co2Factor').value) || 0;
+  const company = document.getElementById('companyName').value.trim() || 'Flotte';
+
+  const months = monthRanges(startDate, endDate);
+  if (months.length === 0) throw new Error('Période invalide');
+
+  const allMetrics = ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds'];
+  const matrix = [];
+  for (let i = 0; i < months.length; i++) {
+    const m = months[i];
+    document.getElementById('generateLabel').textContent = 'Mois ' + (i + 1) + '/' + months.length + '…';
+    const raw = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, allMetrics);
+    const perVehicle = {};
+    raw.forEach(v => {
+      perVehicle[v.id] = {
+        id: v.id,
+        name: v.name || v.id,
+        ...computeVehicleMonth(v, cap, price, co2)
+      };
+    });
+    matrix.push({ ...m, perVehicle });
+  }
+
+  const idSet = new Set();
+  matrix.forEach(m => Object.keys(m.perVehicle).forEach(id => idSet.add(id)));
+  if (vehicleIds.length > 0) {
+    vehicleIds.forEach(id => idSet.add(id));
+  }
+  const allVehicles = Array.from(idSet).map(id => {
+    const v = state.vehicles.find(x => x.id === id);
+    const fromMatrix = matrix.find(m => m.perVehicle[id])?.perVehicle[id];
+    return { id, name: v?.name || fromMatrix?.name || id };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  state.report = { mode: 'comparative', company, startDate, endDate, months: matrix, vehicles: allVehicles };
+  renderComparative();
+}
+
+async function fetchStatsRange(startISO, endISO, vehicleIds, metrics) {
+  let all = [], cursor = null, pages = 0;
+  do {
+    const params = { startTime: startISO, endTime: endISO, types: metrics.join(','), limit: 512 };
+    if (vehicleIds.length > 0) params.vehicleIds = vehicleIds.join(',');
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/fleet/vehicles/stats/history', params);
+    all = all.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+  return all;
+}
+
+function renderComparative() {
+  const r = state.report;
+  if (!r || r.mode !== 'comparative') return;
+
+  const monthLabels = r.months.map(m => m.label).join(', ');
+  document.getElementById('resultsTitle').textContent = 'Rapport Comparatif de Consommation Flotte';
+  document.getElementById('resultsCount').textContent = r.vehicles.length;
+
+  const scc = document.getElementById('summaryCards');
+  scc.className = 'p-6 border-b border-gray-100';
+  scc.innerHTML =
+    '<h3 class="text-2xl font-bold text-slate-800">Rapport Comparatif de Consommation Flotte</h3>' +
+    '<p class="text-sm text-slate-500 mt-1">' + escapeHtml(r.company) + ' — ' + escapeHtml(monthLabels) + ' — Données vérifiées Samsara</p>';
+
+  const rows = [
+    { key: 'liters', label: 'Consommation totale', unit: 'L', dec: 1, color: 'text-blue-700' },
+    { key: 'km', label: 'Distance parcourue', unit: 'km', dec: 1, color: 'text-blue-700' },
+    { key: 'lPer100', label: 'Efficacité globale', unit: 'L/100km', dec: 1, color: 'text-blue-700' },
+    { key: 'cost', label: 'Coût carburant', unit: '€', dec: 2, color: 'text-blue-700' },
+    { key: 'co2', label: 'Émissions CO2', unit: 'kg', dec: 1, color: 'text-blue-700' },
+    { key: 'hours', label: 'Durée moteur totale', unit: 'h', dec: 2, color: 'text-blue-700', hmin: true },
+    { key: 'fuelRate', label: 'Fuel Rate moyen', unit: 'L/h', dec: 2, color: 'text-emerald-600' }
+  ];
+
+  let html = '<div class="p-6 space-y-8">';
+  html += '<p class="text-xs text-slate-400 uppercase tracking-wider">Tableau — ' + r.vehicles.map(v => v.name).join(' · ') + ' <span class="ml-3 normal-case tracking-normal text-slate-500">Données VÉRIFIÉES Samsara uniquement</span></p>';
+
+  r.months.forEach((m, idx) => {
+    html += '<div class="' + (idx > 0 ? 'pt-6 border-t border-slate-200' : '') + '">';
+    html += '<h4 class="text-base font-semibold text-slate-800 mb-3">' + escapeHtml(m.label) + '</h4>';
+    html += '<div class="overflow-x-auto"><table class="w-full text-sm border-collapse">';
+    html += '<thead><tr class="text-xs uppercase text-slate-500">';
+    html += '<th class="text-left py-2 font-semibold">Paramètre</th>';
+    r.vehicles.forEach(v => {
+      html += '<th class="text-right py-2 px-2 font-semibold text-orange-500">' + escapeHtml(v.name) + '</th>';
+    });
+    html += '</tr></thead><tbody class="divide-y divide-slate-100">';
+
+    rows.forEach(rowDef => {
+      html += '<tr>';
+      html += '<td class="py-2 text-slate-700 font-medium">' + rowDef.label + ' <span class="text-xs text-slate-400">(' + rowDef.unit + ')</span></td>';
+      r.vehicles.forEach(v => {
+        const cell = m.perVehicle[v.id];
+        const val = cell ? cell[rowDef.key] : null;
+        let txt = '—';
+        if (val != null && !isNaN(val)) {
+          if (rowDef.hmin) txt = formatHMin(val);
+          else txt = fmt(val, rowDef.dec);
+        }
+        html += '<td class="py-2 px-2 text-right ' + rowDef.color + '">' + txt + '</td>';
+      });
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div></div>';
+  });
+
+  html += '</div>';
+  document.getElementById('tableContainer').innerHTML = html;
+  document.getElementById('resultsSection').classList.remove('hidden');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function exportComparativeCSV() {
+  const r = state.report;
+  if (!r || r.mode !== 'comparative') return;
+  const rows = [
+    { key: 'liters', label: 'Consommation totale (L)' },
+    { key: 'km', label: 'Distance parcourue (km)' },
+    { key: 'lPer100', label: 'Efficacité globale (L/100km)' },
+    { key: 'cost', label: 'Coût carburant (€)' },
+    { key: 'co2', label: 'Émissions CO2 (kg)' },
+    { key: 'hours', label: 'Durée moteur totale (h)' },
+    { key: 'fuelRate', label: 'Fuel Rate moyen (L/h)' }
+  ];
+  const lines = [];
+  lines.push(['Rapport Comparatif de Consommation Flotte']);
+  lines.push([r.company]);
+  lines.push([r.months.map(m => m.label).join(' · ')]);
+  lines.push([]);
+
+  r.months.forEach(m => {
+    lines.push([m.label]);
+    lines.push(['Paramètre', ...r.vehicles.map(v => v.name)]);
+    rows.forEach(rd => {
+      const line = [rd.label];
+      r.vehicles.forEach(v => {
+        const cell = m.perVehicle[v.id];
+        const val = cell ? cell[rd.key] : null;
+        line.push(val != null && !isNaN(val) ? String(val).replace('.', ',') : '');
+      });
+      lines.push(line);
+    });
+    lines.push([]);
+  });
+
+  const csv = lines.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rapport-comparatif-' + r.startDate + '-' + r.endDate + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function renderResults() {
   const r = state.report;
   if (!r) return;
@@ -447,7 +699,9 @@ function renderResults() {
   if (showFuel && cap > 0) cards += '<div class="bg-orange-50 rounded-xl p-4"><p class="text-xs font-medium text-orange-700 mb-1">⛽ Carburant total</p><p class="text-2xl font-bold text-orange-800">' + (totals.liters != null ? fmt(totals.liters, 0) : '—') + ' <span class="text-sm font-normal">L</span></p></div>';
   if (showHours) cards += '<div class="bg-green-50 rounded-xl p-4"><p class="text-xs font-medium text-green-700 mb-1">⏱️ Heures moteur</p><p class="text-2xl font-bold text-green-800">' + fmt(totals.engineHours, 0) + ' <span class="text-sm font-normal">h</span></p></div>';
   if (showFuel && cap > 0 && price > 0 && totals.cost != null) cards += '<div class="bg-purple-50 rounded-xl p-4"><p class="text-xs font-medium text-purple-700 mb-1">💶 Coût estimé</p><p class="text-2xl font-bold text-purple-800">' + fmt(totals.cost, 2) + ' <span class="text-sm font-normal">€</span></p></div>';
-  document.getElementById('summaryCards').innerHTML = cards;
+  const sc = document.getElementById('summaryCards');
+  sc.className = 'grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 border-b border-gray-100';
+  sc.innerHTML = cards;
 
   // Table
   if (sorted.length === 0) {
@@ -514,6 +768,7 @@ function renderResults() {
 
 function exportCSV() {
   if (!state.report) return;
+  if (state.report.mode === 'comparative') return exportComparativeCSV();
   const r = state.report;
   const price = parseFloat(document.getElementById('fuelPrice').value) || 0;
   const cap = parseFloat(document.getElementById('tankCapacity').value) || 0;
