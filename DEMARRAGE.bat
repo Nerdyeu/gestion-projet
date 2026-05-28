@@ -16,8 +16,8 @@ echo ========================================
 echo  APPLICATION EN COURS DE DEMARRAGE
 echo ========================================
 echo.
-echo Backend : http://localhost:5000
-echo Frontend : http://localhost:5173
+echo Backend : http://localhost:4001
+echo Frontend : http://localhost:4000
 echo.
 echo Deux fenetres vont s'ouvrir :
 echo - Backend Server (serveur API)

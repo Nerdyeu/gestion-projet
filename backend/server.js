@@ -8,7 +8,7 @@ import { sendTaskCompletedEmail, sendProjectCompletedEmail } from './services/em
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 5000
+const PORT = process.env.PORT || 4001
 const prisma = new PrismaClient()
 
 // Utilisateur par défaut (sert de fallback si aucun utilisateur fourni)
