@@ -176,7 +176,12 @@
 <script>
 'use strict';
 
-const REGIONS = { US: 'https://api.samsara.com', EU: 'https://api.eu.samsara.com' };
+// Si la page est servie via http://localhost (le mini serveur Node), on utilise son proxy
+// pour contourner CORS. Sinon, appels directs à l'API Samsara (peut être bloqué par CORS).
+const USE_PROXY = location.protocol.startsWith('http');
+const REGIONS = USE_PROXY
+  ? { US: '/samsara-proxy/us', EU: '/samsara-proxy/eu' }
+  : { US: 'https://api.samsara.com', EU: 'https://api.eu.samsara.com' };
 const LS_KEY = 'samsara-config';
 
 const state = {
