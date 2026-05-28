@@ -665,6 +665,151 @@ app.patch('/api/user/:userId/general', async (req, res) => {
   }
 })
 
+// ===== ROUTES SAMSARA =====
+
+const SAMSARA_BASE = 'https://api.samsara.com'
+
+async function getSamsaraToken() {
+  const config = await prisma.samsaraConfig.findFirst()
+  return config?.apiToken || null
+}
+
+async function samsaraFetch(path, token, params = {}) {
+  const url = new URL(`${SAMSARA_BASE}${path}`)
+  Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v))
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw { status: res.status, message: text }
+  }
+  return res.json()
+}
+
+app.get('/api/samsara/config', async (req, res) => {
+  try {
+    const config = await prisma.samsaraConfig.findFirst()
+    if (!config) return res.json({ configured: false })
+    const token = config.apiToken
+    const masked = token.length > 8 ? token.slice(0, 4) + '****' + token.slice(-4) : '****'
+    res.json({ configured: true, maskedToken: masked })
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur lors de la récupération de la configuration' })
+  }
+})
+
+app.post('/api/samsara/config', async (req, res) => {
+  try {
+    const { apiToken } = req.body
+    if (!apiToken) return res.status(400).json({ error: 'Token API requis' })
+    await prisma.samsaraConfig.upsert({
+      where: { id: 1 },
+      update: { apiToken },
+      create: { id: 1, apiToken }
+    })
+    res.json({ message: 'Configuration sauvegardée', configured: true })
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur lors de la sauvegarde de la configuration' })
+  }
+})
+
+app.get('/api/samsara/test', async (req, res) => {
+  try {
+    const token = await getSamsaraToken()
+    if (!token) return res.status(400).json({ error: 'Samsara non configuré' })
+    const data = await samsaraFetch('/fleet/vehicles', token, { limit: '1' })
+    res.json({ success: true, message: 'Connexion Samsara réussie' })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Échec de connexion Samsara', details: err.message })
+  }
+})
+
+app.get('/api/samsara/vehicles', async (req, res) => {
+  try {
+    const token = await getSamsaraToken()
+    if (!token) return res.status(400).json({ error: 'Samsara non configuré' })
+    let vehicles = []
+    let cursor = null
+    do {
+      const params = { limit: '512' }
+      if (cursor) params.after = cursor
+      const data = await samsaraFetch('/fleet/vehicles', token, params)
+      vehicles = vehicles.concat(data.data || [])
+      cursor = data.pagination?.endCursor && data.pagination.hasNextPage ? data.pagination.endCursor : null
+    } while (cursor)
+    res.json({ data: vehicles })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: 'Erreur lors de la récupération des véhicules', details: err.message })
+  }
+})
+
+app.get('/api/samsara/fuel-report', async (req, res) => {
+  try {
+    const { startDate, endDate, vehicleIds, metrics } = req.query
+    if (!startDate || !endDate) return res.status(400).json({ error: 'Dates de début et fin requises' })
+
+    const token = await getSamsaraToken()
+    if (!token) return res.status(400).json({ error: 'Samsara non configuré' })
+
+    const requestedMetrics = metrics ? metrics.split(',') : ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds']
+    const types = requestedMetrics.join(',')
+
+    const startTime = new Date(startDate).toISOString()
+    const endTime = new Date(endDate).toISOString()
+
+    let allData = []
+    let cursor = null
+    do {
+      const params = { startTime, endTime, types, limit: '512' }
+      if (vehicleIds) params.vehicleIds = vehicleIds
+      if (cursor) params.after = cursor
+      const data = await samsaraFetch('/fleet/vehicles/stats/history', token, params)
+      allData = allData.concat(data.data || [])
+      cursor = data.pagination?.endCursor && data.pagination.hasNextPage ? data.pagination.endCursor : null
+    } while (cursor)
+
+    // Agrégation par véhicule
+    const report = allData.map(vehicle => {
+      const result = { id: vehicle.id, name: vehicle.name || 'Véhicule inconnu' }
+
+      if (vehicle.fuelPercents?.length >= 2) {
+        const sorted = [...vehicle.fuelPercents].sort((a, b) => new Date(a.time) - new Date(b.time))
+        result.fuelStart = sorted[0].value?.percentage ?? null
+        result.fuelEnd = sorted[sorted.length - 1].value?.percentage ?? null
+        result.fuelDelta = result.fuelStart !== null && result.fuelEnd !== null
+          ? parseFloat((result.fuelStart - result.fuelEnd).toFixed(2))
+          : null
+        result.fuelReadings = vehicle.fuelPercents.length
+      }
+
+      if (vehicle.obdOdometerMeters?.length >= 2) {
+        const sorted = [...vehicle.obdOdometerMeters].sort((a, b) => new Date(a.time) - new Date(b.time))
+        const odomStart = sorted[0].value?.meters ?? null
+        const odomEnd = sorted[sorted.length - 1].value?.meters ?? null
+        result.distanceMeters = odomStart !== null && odomEnd !== null ? odomEnd - odomStart : null
+        result.distanceKm = result.distanceMeters !== null ? parseFloat((result.distanceMeters / 1000).toFixed(2)) : null
+        result.odometerReadings = vehicle.obdOdometerMeters.length
+      }
+
+      if (vehicle.obdEngineSeconds?.length >= 2) {
+        const sorted = [...vehicle.obdEngineSeconds].sort((a, b) => new Date(a.time) - new Date(b.time))
+        const secStart = sorted[0].value?.engineSeconds ?? null
+        const secEnd = sorted[sorted.length - 1].value?.engineSeconds ?? null
+        const deltaSeconds = secStart !== null && secEnd !== null ? secEnd - secStart : null
+        result.engineHours = deltaSeconds !== null ? parseFloat((deltaSeconds / 3600).toFixed(2)) : null
+      }
+
+      return result
+    })
+
+    res.json({ data: report, startDate, endDate, vehicleCount: report.length })
+  } catch (err) {
+    console.error('Samsara fuel-report error:', err)
+    res.status(err.status || 500).json({ error: 'Erreur lors de la génération du rapport', details: err.message })
+  }
+})
+
 // Gestion des erreurs
 app.use((err, req, res, next) => {
   console.error(err.stack)

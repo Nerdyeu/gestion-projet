@@ -11,7 +11,8 @@ import {
   Settings,
   HelpCircle,
   ChevronLeft,
-  Sparkles
+  Sparkles,
+  Gauge
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -22,6 +23,7 @@ const navigation = [
   { name: 'Calendrier', path: '/calendar', icon: Calendar, color: 'from-orange-500 to-yellow-500' },
   { name: 'Gestion de client', path: '/clients', icon: Users, color: 'from-indigo-500 to-purple-500' },
   { name: 'Gestion de fournisseur', path: '/suppliers', icon: Truck, color: 'from-red-500 to-pink-500' },
+  { name: 'Rapports Samsara', path: '/samsara', icon: Gauge, color: 'from-orange-500 to-red-500' },
 ]
 
 const bottomNavigation = [

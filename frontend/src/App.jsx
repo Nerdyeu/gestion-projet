@@ -10,6 +10,7 @@ import Tasks from './pages/Tasks'
 import Calendar from './pages/Calendar'
 import Settings from './pages/Settings'
 import Support from './pages/Support'
+import SamsaraReport from './components/SamsaraReport'
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
               <Route path="/suppliers" element={<Suppliers />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/support" element={<Support />} />
+              <Route path="/samsara" element={<SamsaraReport />} />
             </Routes>
           </Layout>
         </ErrorBoundary>
