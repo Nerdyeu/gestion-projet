@@ -19,7 +19,7 @@
     <div class="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow text-white text-xl">🚛</div>
     <div>
       <h1 class="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
-      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v6 · 2026-05-28</span></p>
+      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v7 · 2026-05-28</span></p>
     </div>
   </div>
 </header>
@@ -106,14 +106,12 @@
           🚛 Véhicules <span id="vehiclesLoading" class="text-xs text-slate-400 hidden">(chargement…)</span>
           <span id="vehiclesCount" class="text-xs text-orange-600 font-medium ml-2"></span>
         </label>
-        <p class="text-xs text-slate-500 mb-2">💡 <strong>Ctrl+clic</strong> (ou <strong>Cmd+clic</strong> sur Mac) pour sélectionner plusieurs véhicules. <strong>Shift+clic</strong> pour une plage.</p>
-        <select id="vehicleSelect" multiple size="10" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"></select>
-        <div class="flex gap-2 mt-2">
-          <button id="selectAllVehicles" class="text-xs text-orange-600 hover:underline">✓ Tout sélectionner</button>
-          <span class="text-xs text-slate-300">|</span>
-          <button id="clearVehicles" class="text-xs text-slate-500 hover:underline">Tout désélectionner</button>
-          <button id="reloadVehicles" class="ml-auto text-xs text-blue-600 hover:underline">🔄 Recharger</button>
+        <div class="flex gap-2 mb-2">
+          <button id="selectAllVehicles" class="text-xs px-3 py-1 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 font-medium">✓ Tout sélectionner</button>
+          <button id="clearVehicles" class="text-xs px-3 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 font-medium">✗ Tout effacer</button>
+          <button id="reloadVehicles" class="ml-auto text-xs px-3 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100">🔄 Recharger</button>
         </div>
+        <div id="vehicleCheckboxList" class="max-h-56 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100"></div>
         <p class="text-xs text-slate-400 mt-1">Aucune sélection = tous les véhicules</p>
       </div>
 
@@ -335,14 +333,7 @@ async function loadVehicles() {
   document.getElementById('vehiclesLoading').classList.remove('hidden');
   try {
     state.vehicles = await fetchAllVehicles();
-    const sel = document.getElementById('vehicleSelect');
-    sel.innerHTML = '';
-    state.vehicles.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      opt.textContent = (v.name || v.id) + (v.licensePlate ? ' — ' + v.licensePlate : '');
-      sel.appendChild(opt);
-    });
+    renderVehicleCheckboxes();
     updateVehicleCount();
   } catch (err) {
     console.error(err);
@@ -351,14 +342,34 @@ async function loadVehicles() {
   }
 }
 
+function renderVehicleCheckboxes() {
+  const list = document.getElementById('vehicleCheckboxList');
+  list.innerHTML = '';
+  state.vehicles.forEach(v => {
+    const id = 'vchk_' + v.id;
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    label.className = 'flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-orange-50 transition-colors select-none';
+    label.innerHTML =
+      '<input type="checkbox" id="' + id + '" value="' + escapeHtml(v.id) + '" class="vehicle-chk w-4 h-4 accent-orange-500 flex-shrink-0" />' +
+      '<span class="font-mono text-sm text-slate-700">' + escapeHtml(v.name || v.id) + '</span>' +
+      (v.licensePlate ? '<span class="ml-auto text-xs text-slate-400">' + escapeHtml(v.licensePlate) + '</span>' : '');
+    label.querySelector('input').addEventListener('change', updateVehicleCount);
+    list.appendChild(label);
+  });
+}
+
+function getSelectedVehicleIds() {
+  return Array.from(document.querySelectorAll('.vehicle-chk:checked')).map(c => c.value);
+}
+
 function updateVehicleCount() {
-  const sel = document.getElementById('vehicleSelect');
-  const total = sel.options.length;
-  const selected = Array.from(sel.selectedOptions).length;
+  const total = document.querySelectorAll('.vehicle-chk').length;
+  const selected = document.querySelectorAll('.vehicle-chk:checked').length;
   const el = document.getElementById('vehiclesCount');
   if (!el) return;
-  if (selected === 0) el.textContent = '(' + total + ' disponibles — aucun sélectionné = tous)';
-  else el.textContent = '(' + selected + '/' + total + ' sélectionnés)';
+  if (selected === 0) el.textContent = '(' + total + ' disponibles — aucun coché = tous)';
+  else el.textContent = '(' + selected + '/' + total + ' sélectionné' + (selected > 1 ? 's' : '') + ')';
 }
 
 function applyQuickRange(opts) {
@@ -382,7 +393,7 @@ async function generateReport() {
   const startDate = document.getElementById('startDate').value;
   const endDate = document.getElementById('endDate').value;
   const metrics = Array.from(document.querySelectorAll('.metric:checked')).map(c => c.value);
-  const vehicleIds = Array.from(document.getElementById('vehicleSelect').selectedOptions).map(o => o.value);
+  const vehicleIds = getSelectedVehicleIds();
   const comparative = document.getElementById('comparativeMode').checked;
 
   if (!startDate || !endDate) {
@@ -875,14 +886,13 @@ document.querySelectorAll('.quick-range').forEach(b => {
   });
 });
 document.getElementById('selectAllVehicles').addEventListener('click', () => {
-  Array.from(document.getElementById('vehicleSelect').options).forEach(o => o.selected = true);
+  document.querySelectorAll('.vehicle-chk').forEach(c => c.checked = true);
   updateVehicleCount();
 });
 document.getElementById('clearVehicles').addEventListener('click', () => {
-  Array.from(document.getElementById('vehicleSelect').options).forEach(o => o.selected = false);
+  document.querySelectorAll('.vehicle-chk').forEach(c => c.checked = false);
   updateVehicleCount();
 });
-document.getElementById('vehicleSelect').addEventListener('change', updateVehicleCount);
 document.getElementById('reloadVehicles').addEventListener('click', loadVehicles);
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (!confirm('Effacer le token et la région stockés dans le navigateur ?')) return;
