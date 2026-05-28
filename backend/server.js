@@ -61,16 +61,55 @@ app.post('/api/samsara/config', async (req, res) => {
   try {
     const { apiToken, region } = req.body
     if (!apiToken) return res.status(400).json({ error: 'Token API requis' })
+    const cleanToken = apiToken.trim().replace(/[\r\n\t]/g, '')
     const r = region === 'EU' ? 'EU' : 'US'
     await prisma.samsaraConfig.upsert({
       where: { id: 1 },
-      update: { apiToken, region: r },
-      create: { id: 1, apiToken, region: r }
+      update: { apiToken: cleanToken, region: r },
+      create: { id: 1, apiToken: cleanToken, region: r }
     })
-    res.json({ configured: true, region: r })
+    res.json({ configured: true, region: r, tokenLength: cleanToken.length })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Erreur sauvegarde' })
+  }
+})
+
+// Détection automatique de la bonne région
+app.get('/api/samsara/detect-region', async (req, res) => {
+  try {
+    const config = await getSamsaraConfig()
+    if (!config) return res.status(400).json({ error: 'Non configuré' })
+
+    const results = {}
+    for (const region of ['US', 'EU']) {
+      try {
+        const testConfig = { ...config, region }
+        const data = await samsaraFetch('/fleet/vehicles', testConfig, { limit: '1' })
+        results[region] = { ok: true, vehicles: data?.data?.length ?? 0 }
+      } catch (err) {
+        results[region] = { ok: false, status: err.status, message: err.message }
+      }
+    }
+
+    const workingRegion = Object.entries(results).find(([_, r]) => r.ok)?.[0]
+    if (workingRegion && workingRegion !== config.region) {
+      // Migrer automatiquement vers la bonne région
+      await prisma.samsaraConfig.update({
+        where: { id: 1 },
+        data: { region: workingRegion }
+      })
+    }
+
+    res.json({
+      currentRegion: config.region,
+      workingRegion: workingRegion || null,
+      results,
+      tokenLength: config.token.length,
+      tokenPrefix: config.token.slice(0, 12) + '...'
+    })
+  } catch (err) {
+    res.status(500).json({ error: 'Erreur détection', details: err.message })
   }
 })
 

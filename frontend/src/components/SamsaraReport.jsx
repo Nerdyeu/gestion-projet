@@ -147,9 +147,42 @@ export default function SamsaraReport() {
       const data = await res.json()
       setConnResult(res.ok ? 'ok' : 'error')
       setConnDetails(data)
-      if (res.ok) {
-        // Recharger la liste des véhicules
+      if (res.ok) loadVehicles()
+    } catch (err) {
+      setConnResult('error')
+      setConnDetails({ error: err.message })
+    } finally {
+      setTestingConn(false)
+    }
+  }
+
+  async function detectRegion() {
+    setTestingConn(true)
+    setConnResult(null)
+    setConnDetails(null)
+    try {
+      const res = await fetch(`${API_URL}/api/samsara/detect-region`)
+      const data = await res.json()
+      if (data.workingRegion) {
+        setRegion(data.workingRegion)
+        setConnResult('ok')
+        setConnDetails({
+          region: data.workingRegion,
+          message: `Région détectée : ${data.workingRegion}`,
+          results: data.results,
+          tokenLength: data.tokenLength,
+          tokenPrefix: data.tokenPrefix
+        })
+        await loadConfig()
         loadVehicles()
+      } else {
+        setConnResult('error')
+        setConnDetails({
+          message: 'Token rejeté par les deux régions — le token est invalide ou révoqué',
+          results: data.results,
+          tokenLength: data.tokenLength,
+          tokenPrefix: data.tokenPrefix
+        })
       }
     } catch (err) {
       setConnResult('error')
@@ -395,20 +428,31 @@ export default function SamsaraReport() {
               {savingConfig ? 'Sauvegarde...' : 'Sauvegarder'}
             </button>
             {configStatus === 'configured' && (
-              <button
-                onClick={testConnection}
-                disabled={testingConn}
-                className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-all flex items-center gap-2 disabled:opacity-50"
-              >
-                <RefreshCw size={14} className={testingConn ? 'animate-spin' : ''} />
-                Tester
-              </button>
+              <>
+                <button
+                  onClick={testConnection}
+                  disabled={testingConn}
+                  className="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={testingConn ? 'animate-spin' : ''} />
+                  Tester
+                </button>
+                <button
+                  onClick={detectRegion}
+                  disabled={testingConn}
+                  className="px-5 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-all flex items-center gap-2 disabled:opacity-50"
+                  title="Teste votre token sur les deux régions pour identifier la bonne"
+                >
+                  <RefreshCw size={14} className={testingConn ? 'animate-spin' : ''} />
+                  Détecter la région
+                </button>
+              </>
             )}
           </div>
 
           {configStatus === 'configured' && (
             <p className="text-xs text-slate-500">
-              Pour changer le token ou la région, saisissez un nouveau token et cliquez Sauvegarder.
+              Pour changer le token, saisissez-en un nouveau et cliquez Sauvegarder. Utilisez "Détecter la région" si vous avez un doute.
             </p>
           )}
         </div>
@@ -428,13 +472,21 @@ export default function SamsaraReport() {
         {connResult === 'error' && (
           <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm">
             <div className="flex items-center gap-2 text-red-700 font-medium">
-              <XCircle size={15} /> Connexion échouée
+              <XCircle size={15} /> {connDetails?.message || 'Connexion échouée'}
             </div>
             {connDetails?.details && (
               <pre className="text-xs text-red-600 mt-1 ml-6 whitespace-pre-wrap break-all">{connDetails.details}</pre>
             )}
-            <p className="text-xs text-red-600 mt-1 ml-6">
-              Vérifiez : (1) le token est valide, (2) la région est correcte (US ou EU), (3) le token a les permissions "Read vehicle stats".
+            {connDetails?.results && (
+              <div className="text-xs text-red-600 mt-2 ml-6 space-y-1">
+                <p className="font-medium">Test sur les 2 régions :</p>
+                <p>🇺🇸 US : {connDetails.results.US?.ok ? '✓ OK' : `✗ ${connDetails.results.US?.status || ''} ${connDetails.results.US?.message || ''}`}</p>
+                <p>🇪🇺 EU : {connDetails.results.EU?.ok ? '✓ OK' : `✗ ${connDetails.results.EU?.status || ''} ${connDetails.results.EU?.message || ''}`}</p>
+                {connDetails.tokenPrefix && <p className="text-slate-500 mt-1">Token utilisé : {connDetails.tokenPrefix} (longueur : {connDetails.tokenLength})</p>}
+              </div>
+            )}
+            <p className="text-xs text-red-600 mt-2 ml-6">
+              Le token est invalide ou révoqué côté Samsara. Régénérez-en un nouveau dans Samsara Cloud → Paramètres → Accès API → Tokens API → "Créer un token API".
             </p>
           </div>
         )}
