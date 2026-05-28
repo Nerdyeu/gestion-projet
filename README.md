@@ -1,43 +1,29 @@
-# Samsara Reports
+# Samsara Reports — Page Web Standalone
 
-Application web de rapports de consommation de flotte via l'API Samsara.
+Une **seule page HTML** qui appelle directement l'API Samsara depuis votre navigateur.
 
-## Lancement
+## Comment lancer
 
-### Windows
-Double-cliquez sur **DEMARRAGE.bat**
+Double-cliquez simplement sur **`index.html`** — ça s'ouvre dans votre navigateur. C'est tout.
 
-### Manuel (2 terminaux)
+(Ou clic droit → Ouvrir avec → Chrome / Edge / Firefox)
 
-**Terminal 1 — Backend**
-```bash
-cd backend
-npm install
-npx prisma db push
-node server.js
-```
+## Utilisation
 
-**Terminal 2 — Frontend**
-```bash
-cd frontend
-npm install
-npm run dev
-```
+1. Sélectionnez votre région Samsara (US ou EU)
+2. Collez votre token API
+3. Cliquez **Sauvegarder**
+4. Si vous ne savez pas la région : cliquez **Détecter la région**
+5. Choisissez la période, les véhicules, les métriques
+6. Cliquez **Générer le rapport**
+7. Vous pouvez exporter en CSV
 
-Ouvrez **http://localhost:4000**
+## Confidentialité
 
-## Configuration
+- **Aucun backend.** Aucun serveur intermédiaire.
+- Le token est stocké dans le **localStorage** de votre navigateur uniquement.
+- Les requêtes vont directement à `api.samsara.com` ou `api.eu.samsara.com`.
 
-1. Ouvrez l'application
-2. Entrez votre token API Samsara (disponible dans Samsara → Paramètres → Accès API)
-3. Cliquez sur Sauvegarder puis Tester
+## Note sur CORS
 
-## Fonctionnalités
-
-- Configuration du token API Samsara
-- Sélection de la période (raccourcis + dates libres)
-- Sélection des véhicules
-- Métriques : carburant (%), distance (km), heures moteur
-- Calcul du coût estimé (prix carburant + capacité réservoir)
-- Tableau trié par colonne avec totaux
-- Export CSV
+Samsara autorise les appels depuis le navigateur. Si vous voyez une erreur CORS dans la console, dites-le moi — il faudra alors une petite passerelle.

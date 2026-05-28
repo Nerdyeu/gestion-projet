@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Samsara Reports</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #f1f5f9; }
+</style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 via-orange-50/40 to-red-50/40 min-h-screen">
+
+<header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+  <div class="max-w-7xl mx-auto px-4 lg:px-8 py-4 flex items-center gap-3">
+    <div class="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow text-white text-xl">🚛</div>
+    <div>
+      <h1 class="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
+      <p class="text-xs text-slate-400">Rapports de consommation — 100% côté navigateur</p>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-3xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent">Rapports Samsara</h1>
+      <p class="text-slate-500 mt-1">Suivi de consommation et performance de flotte</p>
+    </div>
+  </div>
+
+  <!-- Configuration -->
+  <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-10 h-10 bg-gradient-to-br from-slate-700 to-slate-900 rounded-xl flex items-center justify-center text-white">🔑</div>
+      <div>
+        <h2 class="font-semibold text-gray-800">Configuration API</h2>
+        <p class="text-xs text-slate-500">Token stocké uniquement dans votre navigateur (localStorage)</p>
+      </div>
+      <span id="configStatus" class="ml-auto"></span>
+    </div>
+
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1.5">Région</label>
+        <div class="flex gap-2">
+          <button data-region="US" class="region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-white border-gray-200 text-slate-600">🇺🇸 États-Unis (api.samsara.com)</button>
+          <button data-region="EU" class="region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-white border-gray-200 text-slate-600">🇪🇺 Europe (api.eu.samsara.com)</button>
+        </div>
+      </div>
+
+      <div class="flex gap-3 flex-wrap">
+        <div class="relative flex-1 min-w-64">
+          <input id="tokenInput" type="text" placeholder="samsara_api_XXXXXXXXXXXXXXXXXXXXXXXXXX"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            class="w-full pl-4 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 font-mono" />
+        </div>
+        <button id="saveBtn" class="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">Sauvegarder</button>
+        <button id="testBtn" class="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50">🔄 Tester</button>
+        <button id="detectBtn" class="px-5 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 disabled:opacity-50">🌐 Détecter la région</button>
+      </div>
+
+      <div id="connResult"></div>
+    </div>
+  </section>
+
+  <!-- Filtres -->
+  <section id="filtersSection" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hidden">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center text-white">⚙️</div>
+      <div>
+        <h2 class="font-semibold text-gray-800">Paramètres du rapport</h2>
+        <p class="text-xs text-slate-500">Personnalisez les métriques et la période</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">📅 Période</label>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-days="0">Aujourd'hui</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-days="7">7 derniers jours</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-days="30">30 derniers jours</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-preset="thisMonth">Ce mois-ci</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-preset="lastMonth">Mois dernier</button>
+        </div>
+        <div class="flex gap-3">
+          <div class="flex-1">
+            <label class="block text-xs text-slate-500 mb-1">Début</label>
+            <input type="date" id="startDate" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+          <div class="flex-1">
+            <label class="block text-xs text-slate-500 mb-1">Fin</label>
+            <input type="date" id="endDate" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          🚛 Véhicules <span id="vehiclesLoading" class="text-xs text-slate-400 hidden">(chargement…)</span>
+        </label>
+        <select id="vehicleSelect" multiple size="6" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"></select>
+        <div class="flex gap-2 mt-2">
+          <button id="selectAllVehicles" class="text-xs text-orange-600 hover:underline">Tout sélectionner</button>
+          <span class="text-xs text-slate-300">|</span>
+          <button id="clearVehicles" class="text-xs text-slate-500 hover:underline">Tout désélectionner (= tous)</button>
+          <button id="reloadVehicles" class="ml-auto text-xs text-blue-600 hover:underline">🔄 Recharger</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">Aucune sélection = tous les véhicules</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">📊 Métriques</label>
+        <label class="flex items-center gap-3 py-1 cursor-pointer">
+          <input type="checkbox" class="metric accent-orange-500 w-4 h-4" value="fuelPercents" checked />
+          <span class="text-orange-500">⛽</span><span class="text-sm">Carburant (%)</span>
+        </label>
+        <label class="flex items-center gap-3 py-1 cursor-pointer">
+          <input type="checkbox" class="metric accent-orange-500 w-4 h-4" value="obdOdometerMeters" checked />
+          <span class="text-blue-500">📍</span><span class="text-sm">Distance (km)</span>
+        </label>
+        <label class="flex items-center gap-3 py-1 cursor-pointer">
+          <input type="checkbox" class="metric accent-orange-500 w-4 h-4" value="obdEngineSeconds" checked />
+          <span class="text-green-500">⏱️</span><span class="text-sm">Heures moteur</span>
+        </label>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">💶 Calcul de coût (optionnel)</label>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Prix carburant (€/L)</label>
+            <input type="number" id="fuelPrice" value="1.85" step="0.01" min="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Capacité réservoir (L)</label>
+            <input type="number" id="tankCapacity" value="80" step="1" min="0" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 flex justify-end">
+      <button id="generateBtn" class="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-medium hover:shadow-lg flex items-center gap-2 disabled:opacity-50">
+        📈 <span id="generateLabel">Générer le rapport</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Erreur rapport -->
+  <div id="reportError" class="hidden bg-red-50 border border-red-200 rounded-2xl p-4"></div>
+
+  <!-- Résultats -->
+  <section id="resultsSection" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hidden">
+    <div class="flex items-center justify-between p-6 border-b border-gray-100">
+      <div>
+        <h2 class="font-semibold text-gray-800 flex items-center gap-2">📊 <span id="resultsTitle">Résultats</span></h2>
+        <p class="text-xs text-slate-500 mt-0.5"><span id="resultsCount">0</span> véhicule(s) analysé(s)</p>
+      </div>
+      <button id="exportBtn" class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50">⬇️ Exporter CSV</button>
+    </div>
+    <div id="summaryCards" class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 border-b border-gray-100"></div>
+    <div id="tableContainer" class="overflow-x-auto"></div>
+  </section>
+
+  <p class="text-center text-xs text-slate-400 pt-4">
+    🔒 Toutes les données restent dans votre navigateur. Aucun serveur intermédiaire — appels directs à l'API Samsara.
+  </p>
+</main>
+
+<script>
+'use strict';
+
+const REGIONS = { US: 'https://api.samsara.com', EU: 'https://api.eu.samsara.com' };
+const LS_KEY = 'samsara-config';
+
+const state = {
+  token: '',
+  region: 'EU',
+  vehicles: [],
+  report: null,
+  sortKey: 'name',
+  sortDir: 'asc'
+};
+
+// ============ Persistance ============
+function loadConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if (saved.token) state.token = saved.token;
+    if (saved.region) state.region = saved.region;
+  } catch {}
+}
+function saveConfigToLS() {
+  localStorage.setItem(LS_KEY, JSON.stringify({ token: state.token, region: state.region }));
+}
+
+// ============ API Samsara ============
+async function samsaraFetch(path, params = {}) {
+  if (!state.token) throw new Error('Pas de token configuré');
+  const url = new URL(REGIONS[state.region] + path);
+  Object.entries(params).forEach(([k, v]) => v !== undefined && v !== null && v !== '' && url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), {
+    headers: { 'Authorization': 'Bearer ' + state.token, 'Content-Type': 'application/json' }
+  });
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch { body = text; }
+  if (!res.ok) throw { status: res.status, body, message: typeof body === 'string' ? body : (body.message || JSON.stringify(body)) };
+  return body;
+}
+
+async function fetchAllVehicles() {
+  let all = [], cursor = null, pages = 0;
+  do {
+    const params = { limit: 512 };
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/fleet/vehicles', params);
+    all = all.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+  return all;
+}
+
+async function fetchStats(startDate, endDate, vehicleIds, metrics) {
+  const startTime = new Date(startDate).toISOString();
+  const endTime = new Date(endDate + 'T23:59:59').toISOString();
+  let all = [], cursor = null, pages = 0;
+  do {
+    const params = { startTime, endTime, types: metrics.join(','), limit: 512 };
+    if (vehicleIds.length > 0) params.vehicleIds = vehicleIds.join(',');
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/fleet/vehicles/stats/history', params);
+    all = all.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+  return all;
+}
+
+// ============ UI helpers ============
+function fmt(val, dec = 2) {
+  if (val === null || val === undefined || isNaN(val)) return '—';
+  return Number(val).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function maskToken(t) { return t.length > 8 ? t.slice(0, 4) + '****' + t.slice(-4) : '****'; }
+
+function setConfigStatus() {
+  const el = document.getElementById('configStatus');
+  if (state.token) {
+    el.innerHTML = '<span class="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-3 py-1.5 rounded-full">✓ Configuré — ' + maskToken(state.token) + '</span>';
+  } else {
+    el.innerHTML = '<span class="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium px-3 py-1.5 rounded-full">⚠ Non configuré</span>';
+  }
+}
+function setRegionUI() {
+  document.querySelectorAll('.region-btn').forEach(b => {
+    if (b.dataset.region === state.region) {
+      b.className = 'region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-orange-50 border-orange-300 text-orange-700 ring-2 ring-orange-200';
+    } else {
+      b.className = 'region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-white border-gray-200 text-slate-600 hover:border-gray-300';
+    }
+  });
+}
+
+function showConnResult(html) {
+  document.getElementById('connResult').innerHTML = html;
+}
+
+// ============ Actions ============
+async function testConnection() {
+  showConnResult('<p class="mt-3 text-sm text-slate-500">Test en cours...</p>');
+  try {
+    const data = await samsaraFetch('/fleet/vehicles', { limit: 1 });
+    const count = data?.data?.length ?? 0;
+    showConnResult('<div class="mt-3 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700"><strong>✓ Connexion réussie</strong> — Région ' + state.region + ', ' + count + ' véhicule(s) détecté(s) dans le test.</div>');
+    await loadVehicles();
+    document.getElementById('filtersSection').classList.remove('hidden');
+  } catch (err) {
+    showConnResult('<div class="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700"><strong>✗ Échec :</strong> ' + (err.message || err) + (err.status ? ' (HTTP ' + err.status + ')' : '') + '<br><span class="text-xs">Vérifiez le token et la région. Pensez à "Détecter la région" si vous avez un doute.</span></div>');
+  }
+}
+
+async function detectRegion() {
+  if (!state.token) return;
+  showConnResult('<p class="mt-3 text-sm text-slate-500">Test des deux régions en cours...</p>');
+  const results = {};
+  for (const region of ['US', 'EU']) {
+    try {
+      const url = REGIONS[region] + '/fleet/vehicles?limit=1';
+      const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + state.token } });
+      const text = await r.text();
+      let body; try { body = JSON.parse(text); } catch { body = text; }
+      results[region] = { ok: r.ok, status: r.status, body };
+    } catch (err) {
+      results[region] = { ok: false, error: err.message };
+    }
+  }
+  const winner = Object.entries(results).find(([_, r]) => r.ok)?.[0];
+  if (winner) {
+    state.region = winner;
+    saveConfigToLS();
+    setRegionUI();
+    showConnResult('<div class="mt-3 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700"><strong>✓ Région détectée : ' + winner + '</strong> — ' + (results[winner].body?.data?.length ?? 0) + ' véhicule(s) trouvé(s) dans le test.</div>');
+    await testConnection();
+  } else {
+    const detail = JSON.stringify(results, null, 2);
+    showConnResult('<div class="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700"><strong>✗ Token rejeté sur les deux régions</strong> — il est probablement invalide ou révoqué.<br>Régénérez un token dans Samsara Cloud → Paramètres → Accès API.<pre class="text-xs mt-2 whitespace-pre-wrap">' + detail + '</pre></div>');
+  }
+}
+
+async function loadVehicles() {
+  document.getElementById('vehiclesLoading').classList.remove('hidden');
+  try {
+    state.vehicles = await fetchAllVehicles();
+    const sel = document.getElementById('vehicleSelect');
+    sel.innerHTML = '';
+    state.vehicles.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = (v.name || v.id) + (v.licensePlate ? ' — ' + v.licensePlate : '');
+      sel.appendChild(opt);
+    });
+  } catch (err) {
+    console.error(err);
+  } finally {
+    document.getElementById('vehiclesLoading').classList.add('hidden');
+  }
+}
+
+function applyQuickRange(opts) {
+  const now = new Date();
+  const fmtDate = d => d.toISOString().slice(0, 10);
+  let start, end = now;
+  if (opts.days !== undefined) {
+    if (opts.days === 0) start = new Date(now);
+    else { start = new Date(now); start.setDate(start.getDate() - opts.days); }
+  } else if (opts.preset === 'thisMonth') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (opts.preset === 'lastMonth') {
+    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    end = new Date(now.getFullYear(), now.getMonth(), 0);
+  }
+  document.getElementById('startDate').value = fmtDate(start);
+  document.getElementById('endDate').value = fmtDate(end);
+}
+
+async function generateReport() {
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  const metrics = Array.from(document.querySelectorAll('.metric:checked')).map(c => c.value);
+  const vehicleIds = Array.from(document.getElementById('vehicleSelect').selectedOptions).map(o => o.value);
+
+  if (!startDate || !endDate) {
+    document.getElementById('reportError').textContent = 'Sélectionnez une période';
+    document.getElementById('reportError').classList.remove('hidden');
+    return;
+  }
+  if (metrics.length === 0) {
+    document.getElementById('reportError').textContent = 'Sélectionnez au moins une métrique';
+    document.getElementById('reportError').classList.remove('hidden');
+    return;
+  }
+
+  document.getElementById('reportError').classList.add('hidden');
+  document.getElementById('generateLabel').textContent = 'Génération...';
+  document.getElementById('generateBtn').disabled = true;
+
+  try {
+    const rawData = await fetchStats(startDate, endDate, vehicleIds, metrics);
+    const report = rawData.map(v => {
+      const r = { id: v.id, name: v.name || v.id };
+      if (v.fuelPercents?.length >= 2) {
+        const s = [...v.fuelPercents].sort((a, b) => new Date(a.time) - new Date(b.time));
+        r.fuelStart = s[0].value?.percentage ?? null;
+        r.fuelEnd = s[s.length - 1].value?.percentage ?? null;
+        r.fuelDelta = r.fuelStart != null && r.fuelEnd != null ? +(r.fuelStart - r.fuelEnd).toFixed(2) : null;
+      }
+      if (v.obdOdometerMeters?.length >= 2) {
+        const s = [...v.obdOdometerMeters].sort((a, b) => new Date(a.time) - new Date(b.time));
+        const a = s[0].value?.meters ?? null, b = s[s.length - 1].value?.meters ?? null;
+        r.distanceKm = a != null && b != null ? +((b - a) / 1000).toFixed(2) : null;
+      }
+      if (v.obdEngineSeconds?.length >= 2) {
+        const s = [...v.obdEngineSeconds].sort((a, b) => new Date(a.time) - new Date(b.time));
+        const a = s[0].value?.engineSeconds ?? null, b = s[s.length - 1].value?.engineSeconds ?? null;
+        r.engineHours = a != null && b != null ? +((b - a) / 3600).toFixed(2) : null;
+      }
+      return r;
+    });
+    state.report = { data: report, startDate, endDate, metrics };
+    renderResults();
+  } catch (err) {
+    document.getElementById('reportError').innerHTML = '<strong class="text-red-700">Erreur lors de la génération :</strong> <span class="text-red-600">' + (err.message || err) + '</span>';
+    document.getElementById('reportError').classList.remove('hidden');
+  } finally {
+    document.getElementById('generateLabel').textContent = 'Générer le rapport';
+    document.getElementById('generateBtn').disabled = false;
+  }
+}
+
+function renderResults() {
+  const r = state.report;
+  if (!r) return;
+  const price = parseFloat(document.getElementById('fuelPrice').value) || 0;
+  const cap = parseFloat(document.getElementById('tankCapacity').value) || 0;
+  const showFuel = r.metrics.includes('fuelPercents');
+  const showDist = r.metrics.includes('obdOdometerMeters');
+  const showHours = r.metrics.includes('obdEngineSeconds');
+
+  const sorted = [...r.data].sort((a, b) => {
+    const va = a[state.sortKey], vb = b[state.sortKey];
+    if (typeof va === 'number' && typeof vb === 'number') return state.sortDir === 'asc' ? va - vb : vb - va;
+    return state.sortDir === 'asc' ? String(va ?? '').localeCompare(String(vb ?? '')) : String(vb ?? '').localeCompare(String(va ?? ''));
+  });
+
+  const totals = sorted.reduce((acc, v) => {
+    const liters = v.fuelDelta != null && cap > 0 ? (v.fuelDelta / 100) * cap : null;
+    acc.distanceKm += v.distanceKm || 0;
+    acc.engineHours += v.engineHours || 0;
+    if (liters != null) { acc.liters = (acc.liters || 0) + liters; acc.cost = (acc.cost || 0) + liters * price; }
+    return acc;
+  }, { distanceKm: 0, engineHours: 0, liters: null, cost: null });
+
+  document.getElementById('resultsTitle').textContent = 'Résultats — ' + r.startDate + ' au ' + r.endDate;
+  document.getElementById('resultsCount').textContent = sorted.length;
+
+  // Cartes résumé
+  let cards = '';
+  if (showDist) cards += '<div class="bg-blue-50 rounded-xl p-4"><p class="text-xs font-medium text-blue-700 mb-1">📍 Distance totale</p><p class="text-2xl font-bold text-blue-800">' + fmt(totals.distanceKm, 0) + ' <span class="text-sm font-normal">km</span></p></div>';
+  if (showFuel && cap > 0) cards += '<div class="bg-orange-50 rounded-xl p-4"><p class="text-xs font-medium text-orange-700 mb-1">⛽ Carburant total</p><p class="text-2xl font-bold text-orange-800">' + (totals.liters != null ? fmt(totals.liters, 0) : '—') + ' <span class="text-sm font-normal">L</span></p></div>';
+  if (showHours) cards += '<div class="bg-green-50 rounded-xl p-4"><p class="text-xs font-medium text-green-700 mb-1">⏱️ Heures moteur</p><p class="text-2xl font-bold text-green-800">' + fmt(totals.engineHours, 0) + ' <span class="text-sm font-normal">h</span></p></div>';
+  if (showFuel && cap > 0 && price > 0 && totals.cost != null) cards += '<div class="bg-purple-50 rounded-xl p-4"><p class="text-xs font-medium text-purple-700 mb-1">💶 Coût estimé</p><p class="text-2xl font-bold text-purple-800">' + fmt(totals.cost, 2) + ' <span class="text-sm font-normal">€</span></p></div>';
+  document.getElementById('summaryCards').innerHTML = cards;
+
+  // Table
+  if (sorted.length === 0) {
+    document.getElementById('tableContainer').innerHTML = '<div class="text-center py-12 text-slate-400"><p>Aucune donnée disponible pour cette période.</p><p class="text-sm mt-1">Vérifiez que vos véhicules remontent des données OBD.</p></div>';
+  } else {
+    let headers = '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="name">Véhicule</th>';
+    if (showFuel) {
+      headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="fuelStart">Début %</th>';
+      headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="fuelEnd">Fin %</th>';
+      headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="fuelDelta">Conso %</th>';
+      if (cap > 0) headers += '<th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Litres</th>';
+      if (cap > 0 && price > 0) headers += '<th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Coût €</th>';
+    }
+    if (showDist) headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="distanceKm">Distance km</th>';
+    if (showHours) headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="engineHours">Heures</th>';
+    if (showDist && showFuel && cap > 0) headers += '<th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">L/100km</th>';
+
+    let rows = '';
+    sorted.forEach((v, i) => {
+      const liters = v.fuelDelta != null && cap > 0 ? (v.fuelDelta / 100) * cap : null;
+      const cost = liters != null ? liters * price : null;
+      const l100 = liters != null && v.distanceKm > 0 ? (liters / v.distanceKm) * 100 : null;
+      rows += '<tr class="' + (i % 2 ? 'bg-slate-50/50' : 'bg-white') + '">';
+      rows += '<td class="px-4 py-3 font-medium text-slate-800">🚛 ' + (v.name || '') + '</td>';
+      if (showFuel) {
+        rows += '<td class="px-4 py-3 text-slate-600">' + (v.fuelStart != null ? fmt(v.fuelStart, 1) + '%' : '—') + '</td>';
+        rows += '<td class="px-4 py-3 text-slate-600">' + (v.fuelEnd != null ? fmt(v.fuelEnd, 1) + '%' : '—') + '</td>';
+        rows += '<td class="px-4 py-3"><span class="font-medium ' + (v.fuelDelta > 0 ? 'text-red-600' : 'text-green-600') + '">' + (v.fuelDelta != null ? fmt(Math.abs(v.fuelDelta), 1) + '%' : '—') + '</span></td>';
+        if (cap > 0) rows += '<td class="px-4 py-3 font-medium">' + (liters != null ? fmt(liters, 1) + ' L' : '—') + '</td>';
+        if (cap > 0 && price > 0) rows += '<td class="px-4 py-3 text-purple-700 font-medium">' + (cost != null ? fmt(cost, 2) + ' €' : '—') + '</td>';
+      }
+      if (showDist) rows += '<td class="px-4 py-3 text-blue-700 font-medium">' + (v.distanceKm != null ? fmt(v.distanceKm, 1) + ' km' : '—') + '</td>';
+      if (showHours) rows += '<td class="px-4 py-3 text-green-700">' + (v.engineHours != null ? fmt(v.engineHours, 1) + ' h' : '—') + '</td>';
+      if (showDist && showFuel && cap > 0) rows += '<td class="px-4 py-3 text-slate-600">' + (l100 != null ? fmt(l100, 1) : '—') + '</td>';
+      rows += '</tr>';
+    });
+
+    let footer = '<tr class="font-semibold text-slate-700 bg-slate-100 border-t-2"><td class="px-4 py-3">TOTAL</td>';
+    if (showFuel) {
+      footer += '<td class="px-4 py-3">—</td><td class="px-4 py-3">—</td><td class="px-4 py-3">—</td>';
+      if (cap > 0) footer += '<td class="px-4 py-3">' + (totals.liters != null ? fmt(totals.liters, 1) + ' L' : '—') + '</td>';
+      if (cap > 0 && price > 0) footer += '<td class="px-4 py-3 text-purple-700">' + (totals.cost != null ? fmt(totals.cost, 2) + ' €' : '—') + '</td>';
+    }
+    if (showDist) footer += '<td class="px-4 py-3 text-blue-700">' + fmt(totals.distanceKm, 1) + ' km</td>';
+    if (showHours) footer += '<td class="px-4 py-3 text-green-700">' + fmt(totals.engineHours, 1) + ' h</td>';
+    if (showDist && showFuel && cap > 0) footer += '<td class="px-4 py-3">—</td>';
+    footer += '</tr>';
+
+    document.getElementById('tableContainer').innerHTML =
+      '<table class="w-full text-sm"><thead class="bg-slate-50"><tr>' + headers + '</tr></thead><tbody class="divide-y divide-gray-50">' + rows + '</tbody><tfoot>' + footer + '</tfoot></table>';
+
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (state.sortKey === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        else { state.sortKey = col; state.sortDir = 'asc'; }
+        renderResults();
+      });
+    });
+  }
+
+  document.getElementById('resultsSection').classList.remove('hidden');
+}
+
+function exportCSV() {
+  if (!state.report) return;
+  const r = state.report;
+  const price = parseFloat(document.getElementById('fuelPrice').value) || 0;
+  const cap = parseFloat(document.getElementById('tankCapacity').value) || 0;
+  const showFuel = r.metrics.includes('fuelPercents');
+  const showDist = r.metrics.includes('obdOdometerMeters');
+  const showHours = r.metrics.includes('obdEngineSeconds');
+
+  const headers = ['Véhicule', 'ID'];
+  if (showFuel) { headers.push('Début %', 'Fin %', 'Conso %'); if (cap > 0) headers.push('Litres'); if (cap > 0 && price > 0) headers.push('Coût €'); }
+  if (showDist) headers.push('Distance km');
+  if (showHours) headers.push('Heures');
+  if (showDist && showFuel && cap > 0) headers.push('L/100km');
+
+  const rows = r.data.map(v => {
+    const liters = v.fuelDelta != null && cap > 0 ? (v.fuelDelta / 100) * cap : null;
+    const cost = liters != null ? liters * price : null;
+    const l100 = liters != null && v.distanceKm > 0 ? (liters / v.distanceKm) * 100 : null;
+    const row = [v.name, v.id];
+    if (showFuel) {
+      row.push(v.fuelStart ?? '', v.fuelEnd ?? '', v.fuelDelta ?? '');
+      if (cap > 0) row.push(liters != null ? liters.toFixed(2) : '');
+      if (cap > 0 && price > 0) row.push(cost != null ? cost.toFixed(2) : '');
+    }
+    if (showDist) row.push(v.distanceKm ?? '');
+    if (showHours) row.push(v.engineHours ?? '');
+    if (showDist && showFuel && cap > 0) row.push(l100 != null ? l100.toFixed(2) : '');
+    return row;
+  });
+
+  const csv = [headers, ...rows].map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rapport-samsara-' + r.startDate + '-' + r.endDate + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============ Init ============
+loadConfig();
+setConfigStatus();
+setRegionUI();
+if (state.token) document.getElementById('tokenInput').value = state.token;
+
+// Dates par défaut
+(function() {
+  const today = new Date();
+  const past = new Date(); past.setDate(past.getDate() - 30);
+  document.getElementById('endDate').value = today.toISOString().slice(0, 10);
+  document.getElementById('startDate').value = past.toISOString().slice(0, 10);
+})();
+
+document.querySelectorAll('.region-btn').forEach(b => {
+  b.addEventListener('click', () => { state.region = b.dataset.region; saveConfigToLS(); setRegionUI(); });
+});
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const t = document.getElementById('tokenInput').value.replace(/[^A-Za-z0-9_]/g, '');
+  if (!t) return;
+  state.token = t;
+  saveConfigToLS();
+  setConfigStatus();
+  document.getElementById('tokenInput').value = '';
+  testConnection();
+});
+document.getElementById('testBtn').addEventListener('click', () => {
+  if (!state.token) { showConnResult('<div class="mt-3 text-sm text-red-600">Sauvegardez d\'abord un token.</div>'); return; }
+  testConnection();
+});
+document.getElementById('detectBtn').addEventListener('click', () => {
+  const typed = document.getElementById('tokenInput').value.replace(/[^A-Za-z0-9_]/g, '');
+  if (typed) state.token = typed;
+  if (!state.token) { showConnResult('<div class="mt-3 text-sm text-red-600">Saisissez ou sauvegardez d\'abord un token.</div>'); return; }
+  detectRegion();
+});
+document.querySelectorAll('.quick-range').forEach(b => {
+  b.addEventListener('click', () => {
+    if (b.dataset.days !== undefined) applyQuickRange({ days: parseInt(b.dataset.days) });
+    else applyQuickRange({ preset: b.dataset.preset });
+  });
+});
+document.getElementById('selectAllVehicles').addEventListener('click', () => {
+  Array.from(document.getElementById('vehicleSelect').options).forEach(o => o.selected = true);
+});
+document.getElementById('clearVehicles').addEventListener('click', () => {
+  Array.from(document.getElementById('vehicleSelect').options).forEach(o => o.selected = false);
+});
+document.getElementById('reloadVehicles').addEventListener('click', loadVehicles);
+document.getElementById('generateBtn').addEventListener('click', generateReport);
+document.getElementById('exportBtn').addEventListener('click', exportCSV);
+
+// Si un token est déjà sauvegardé, on teste automatiquement
+if (state.token) {
+  document.getElementById('filtersSection').classList.remove('hidden');
+  testConnection();
+}
+</script>
+</body>
+</html>
