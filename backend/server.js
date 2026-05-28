@@ -61,7 +61,8 @@ app.post('/api/samsara/config', async (req, res) => {
   try {
     const { apiToken, region } = req.body
     if (!apiToken) return res.status(400).json({ error: 'Token API requis' })
-    const cleanToken = apiToken.trim().replace(/[\r\n\t]/g, '')
+    // Nettoyage agressif : on ne garde que les caractères alphanumériques et _
+    const cleanToken = apiToken.trim().replace(/[^A-Za-z0-9_]/g, '')
     const r = region === 'EU' ? 'EU' : 'US'
     await prisma.samsaraConfig.upsert({
       where: { id: 1 },
@@ -75,12 +76,45 @@ app.post('/api/samsara/config', async (req, res) => {
   }
 })
 
+// Inspection du token stocké en BDD (caractères + codes ASCII)
+app.get('/api/samsara/inspect-token', async (req, res) => {
+  try {
+    const config = await prisma.samsaraConfig.findFirst()
+    if (!config) return res.status(400).json({ error: 'Non configuré' })
+    const t = config.apiToken
+    const charCodes = []
+    for (let i = 0; i < t.length; i++) {
+      const c = t.charCodeAt(i)
+      const ch = t[i]
+      const printable = c >= 32 && c < 127
+      charCodes.push({
+        pos: i,
+        char: printable ? ch : `[0x${c.toString(16).padStart(2, '0')}]`,
+        code: c,
+        suspect: !printable || (c > 127)
+      })
+    }
+    res.json({
+      length: t.length,
+      region: config.region,
+      first16: t.slice(0, 16),
+      last8: t.slice(-8),
+      hasNonAscii: charCodes.some(c => c.code > 127),
+      hasWhitespace: /\s/.test(t),
+      suspectChars: charCodes.filter(c => c.suspect),
+      bytesHex: Buffer.from(t, 'utf8').toString('hex')
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // Test direct d'un token sans passer par la BDD
 app.post('/api/samsara/test-raw', async (req, res) => {
   try {
     const { apiToken } = req.body
     if (!apiToken) return res.status(400).json({ error: 'Token requis' })
-    const cleanToken = apiToken.trim().replace(/[\r\n\t]/g, '')
+    const cleanToken = apiToken.trim().replace(/[^A-Za-z0-9_]/g, '')
 
     const results = {}
     for (const region of ['US', 'EU']) {
