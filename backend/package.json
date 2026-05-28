@@ -1,29 +1,19 @@
 {
-  "name": "gestion-projet-backend",
+  "name": "samsara-reports-backend",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
-    "build": "npx prisma generate && npx prisma db push",
-    "db:migrate": "prisma migrate dev",
-    "db:seed": "node prisma/seed.js",
-    "db:setup": "prisma migrate dev && node prisma/seed.js"
-  },
-  "prisma": {
-    "seed": "node prisma/seed.js"
+    "setup": "npx prisma db push"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0",
-    "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^7.0.12"
+    "express": "^4.18.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
     "prisma": "^5.7.0"
   }
 }

@@ -1,38 +1,27 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import Layout from './components/Layout'
+import { Truck } from 'lucide-react'
 import ErrorBoundary from './components/ErrorBoundary'
-import { ThemeProvider } from './context/ThemeContext'
-import Dashboard from './pages/Dashboard'
-import Projects from './pages/Projects'
-import Clients from './pages/Clients'
-import Suppliers from './pages/Suppliers'
-import Tasks from './pages/Tasks'
-import Calendar from './pages/Calendar'
-import Settings from './pages/Settings'
-import Support from './pages/Support'
 import SamsaraReport from './components/SamsaraReport'
 
 function App() {
   return (
-    <ThemeProvider>
-      <Router>
-        <ErrorBoundary>
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/projects" element={<Projects />} />
-              <Route path="/tasks" element={<Tasks />} />
-              <Route path="/calendar" element={<Calendar />} />
-              <Route path="/clients" element={<Clients />} />
-              <Route path="/suppliers" element={<Suppliers />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/support" element={<Support />} />
-              <Route path="/samsara" element={<SamsaraReport />} />
-            </Routes>
-          </Layout>
-        </ErrorBoundary>
-      </Router>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-orange-50/40 to-red-50/40">
+        <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 lg:px-8 py-4 flex items-center gap-3">
+            <div className="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow">
+              <Truck className="text-white" size={18} />
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
+              <p className="text-xs text-slate-400">Rapports de consommation de flotte</p>
+            </div>
+          </div>
+        </header>
+        <main className="max-w-7xl mx-auto px-4 lg:px-8 py-8">
+          <SamsaraReport />
+        </main>
+      </div>
+    </ErrorBoundary>
   )
 }
 

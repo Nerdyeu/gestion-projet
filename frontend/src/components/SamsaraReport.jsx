@@ -4,7 +4,7 @@ import {
   ChevronDown, Calendar, Gauge, BarChart3, Settings2,
   Eye, EyeOff, AlertCircle, Fuel, Clock, MapPin, DollarSign
 } from 'lucide-react'
-import { API_URL } from '../config'
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 const QUICK_RANGES = [
   { label: "Aujourd'hui", days: 0 },
