@@ -19,7 +19,7 @@
     <div class="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow text-white text-xl">🚛</div>
     <div>
       <h1 class="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
-      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v8 · 2026-05-28</span></p>
+      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v9 · 2026-05-28</span></p>
     </div>
   </div>
 </header>
@@ -508,38 +508,65 @@ function monthRanges(startStr, endStr) {
   return months;
 }
 
+function extractStateName(v) {
+  if (typeof v === 'string') return v;
+  return v?.value || v?.engineState || v?.gpsState || v?.name || '';
+}
+
 function computeVehicleMonth(stats, cap) {
   const res = { liters: null, km: null, hours: null, lPer100: null, fuelRate: null, idleHours: null, ptoHours: null, idlePct: null, ptoPct: null };
+
   if (stats.fuelPercents?.length >= 2 && cap > 0) {
     const s = [...stats.fuelPercents].sort((a, b) => new Date(a.time) - new Date(b.time));
-    const fs = s[0].value?.percentage ?? null;
-    const fe = s[s.length - 1].value?.percentage ?? null;
+    const fs = s[0].value?.percentage ?? (typeof s[0].value === 'number' ? s[0].value : null);
+    const fe = s[s.length - 1].value?.percentage ?? (typeof s[s.length - 1].value === 'number' ? s[s.length - 1].value : null);
     if (fs != null && fe != null) {
       const delta = fs - fe;
       res.liters = +((delta / 100) * cap).toFixed(2);
       if (res.liters < 0) res.liters = 0;
     }
   }
+
+  // Distance : OBD en premier, sinon GPS
   if (stats.obdOdometerMeters?.length >= 2) {
     const s = [...stats.obdOdometerMeters].sort((a, b) => new Date(a.time) - new Date(b.time));
-    const a = s[0].value?.meters, b = s[s.length - 1].value?.meters;
-    if (a != null && b != null) res.km = +((b - a) / 1000).toFixed(2);
+    const a = s[0].value?.meters ?? s[0].value, b = s[s.length - 1].value?.meters ?? s[s.length - 1].value;
+    if (typeof a === 'number' && typeof b === 'number') res.km = +((b - a) / 1000).toFixed(2);
   }
+  if (res.km == null && stats.gpsOdometerMeters?.length >= 2) {
+    const s = [...stats.gpsOdometerMeters].sort((a, b) => new Date(a.time) - new Date(b.time));
+    const a = s[0].value?.meters ?? s[0].value, b = s[s.length - 1].value?.meters ?? s[s.length - 1].value;
+    if (typeof a === 'number' && typeof b === 'number') res.km = +((b - a) / 1000).toFixed(2);
+  }
+  if (res.km == null && stats.gpsDistanceMeters?.length) {
+    // Stat incrémentale : on somme tout
+    const total = stats.gpsDistanceMeters.reduce((acc, x) => acc + (typeof x.value === 'number' ? x.value : (x.value?.meters || 0)), 0);
+    if (total > 0) res.km = +(total / 1000).toFixed(2);
+  }
+
+  // Heures moteur : OBD en premier, sinon dérivées des engineStates (Idle + Driving + On)
   if (stats.obdEngineSeconds?.length >= 2) {
     const s = [...stats.obdEngineSeconds].sort((a, b) => new Date(a.time) - new Date(b.time));
-    const a = s[0].value?.engineSeconds, b = s[s.length - 1].value?.engineSeconds;
-    if (a != null && b != null) res.hours = +((b - a) / 3600).toFixed(2);
+    const a = s[0].value?.engineSeconds ?? s[0].value, b = s[s.length - 1].value?.engineSeconds ?? s[s.length - 1].value;
+    if (typeof a === 'number' && typeof b === 'number') res.hours = +((b - a) / 3600).toFixed(2);
   }
+
+  // engineStates : durée par état (Idle, On, Driving, Off)
   if (Array.isArray(stats.engineStates) && stats.engineStates.length >= 2) {
     const s = [...stats.engineStates].sort((a, b) => new Date(a.time) - new Date(b.time));
-    let idleSec = 0;
+    const buckets = { Idle: 0, On: 0, Driving: 0, Off: 0 };
     for (let i = 0; i < s.length - 1; i++) {
-      const v = s[i].value;
-      const name = typeof v === 'string' ? v : (v?.value || v?.engineState || v?.gpsState || '');
-      if (name === 'Idle') idleSec += (new Date(s[i + 1].time) - new Date(s[i].time)) / 1000;
+      const name = extractStateName(s[i].value);
+      const dur = (new Date(s[i + 1].time) - new Date(s[i].time)) / 1000;
+      if (buckets[name] !== undefined) buckets[name] += dur;
     }
-    res.idleHours = +(idleSec / 3600).toFixed(2);
+    res.idleHours = +(buckets.Idle / 3600).toFixed(2);
+    if (res.hours == null) {
+      const onSec = buckets.Idle + buckets.On + buckets.Driving;
+      if (onSec > 0) res.hours = +(onSec / 3600).toFixed(2);
+    }
   }
+
   if (res.liters != null && res.km > 0) res.lPer100 = +((res.liters / res.km) * 100).toFixed(1);
   if (res.liters != null && res.hours > 0) res.fuelRate = +(res.liters / res.hours).toFixed(2);
   if (res.idleHours != null && res.hours > 0) res.idlePct = +((res.idleHours / res.hours) * 100).toFixed(1);
@@ -561,20 +588,29 @@ async function generateComparativeReport(startDate, endDate, vehicleIds) {
   const months = monthRanges(startDate, endDate);
   if (months.length === 0) throw new Error('Période invalide');
 
-  const allMetrics = ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds', 'engineStates'];
+  // On essaie tous les types possibles, puis on retombe progressivement si l'API refuse.
+  const metricCandidates = [
+    ['fuelPercents', 'obdOdometerMeters', 'gpsOdometerMeters', 'obdEngineSeconds', 'engineStates'],
+    ['fuelPercents', 'obdOdometerMeters', 'gpsOdometerMeters', 'obdEngineSeconds'],
+    ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds']
+  ];
   const matrix = [];
   for (let i = 0; i < months.length; i++) {
     const m = months[i];
     document.getElementById('generateLabel').textContent = 'Mois ' + (i + 1) + '/' + months.length + '…';
     let raw = [];
-    try {
-      raw = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, allMetrics);
-    } catch (err) {
-      // engineStates non supporté → on retombe sans cette métrique
-      raw = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds']);
+    for (let attempt = 0; attempt < metricCandidates.length; attempt++) {
+      try {
+        raw = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, metricCandidates[attempt]);
+        break;
+      } catch (err) {
+        if (attempt === metricCandidates.length - 1) throw err;
+      }
     }
     const perVehicle = {};
     raw.forEach(v => {
+      const availableKeys = Object.keys(v).filter(k => Array.isArray(v[k]) && v[k].length > 0);
+      console.log('[' + m.label + '] ' + (v.name || v.id) + ' — stats reçues :', availableKeys.join(', ') || '(aucune)');
       perVehicle[v.id] = {
         id: v.id,
         name: v.name || v.id,
