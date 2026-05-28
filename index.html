@@ -19,7 +19,7 @@
     <div class="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow text-white text-xl">🚛</div>
     <div>
       <h1 class="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
-      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v3 · 2026-05-28</span></p>
+      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v4 · 2026-05-28</span></p>
     </div>
   </div>
 </header>
@@ -209,9 +209,12 @@ function saveConfigToLS() {
 // ============ API Samsara ============
 async function samsaraFetch(path, params = {}) {
   if (!state.token) throw new Error('Pas de token configuré');
-  const url = new URL(REGIONS[state.region] + path);
-  Object.entries(params).forEach(([k, v]) => v !== undefined && v !== null && v !== '' && url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
+  const qs = Object.entries(params)
+    .filter(([_, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+    .join('&');
+  const url = REGIONS[state.region] + path + (qs ? '?' + qs : '');
+  const res = await fetch(url, {
     headers: { 'Authorization': 'Bearer ' + state.token, 'Content-Type': 'application/json' }
   });
   const text = await res.text();
