@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Samsara Reports</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #f1f5f9; }
+
+  /* La page de garde n'apparaît qu'à l'impression PDF */
+  .pdf-only { display: none; }
+
+  /* ============ IMPRESSION / EXPORT PDF (window.print) ============
+     On laisse le moteur du navigateur gérer la pagination et l'alignement :
+     texte net, tableaux bien centrés, sauts de page propres. */
+  @media print {
+    /* Orientation/marges injectées dynamiquement via #printPage (voir exportPDF) */
+
+    /* On masque tout sauf le rapport */
+    body > header,
+    main > *:not(#resultsSection) { display: none !important; }
+    body { background: #fff !important; }
+    main { max-width: none !important; margin: 0 !important; padding: 0 !important; }
+
+    #resultsSection {
+      box-shadow: none !important;
+      border: none !important;
+      border-radius: 0 !important;
+      overflow: visible !important;
+      /* @page a margin:0 (pour supprimer l'en-tête/pied navigateur) → on recrée
+         les marges gauche/droite ici pour que le contenu ne touche pas les bords */
+      padding-left: 12mm !important;
+      padding-right: 12mm !important;
+    }
+    #tableContainer, #tableContainer * { overflow: visible !important; }
+
+    /* Affiche la page de garde, masque les éléments d'écran (boutons, diag, en-tête doublon) */
+    .pdf-only { display: block !important; padding-top: 12mm !important; }
+    .pdf-hide { display: none !important; }
+
+    /* Un mois par page : saut avant chaque mois sauf le 1er (qui suit la couverture) */
+    .pdf-page-break { page-break-before: always; break-before: page; }
+    .pdf-month { page-break-inside: avoid; break-inside: avoid; text-align: center; padding-top: 45px; padding-bottom: 12mm; }
+    .pdf-month table, .pdf-month tr { page-break-inside: avoid; break-inside: avoid; }
+
+    /* Centre le tableau dans la page : largeur auto (s'adapte au nb de véhicules)
+       et marges auto. Le titre du mois est centré au-dessus. */
+    .pdf-month > h4 { text-align: center !important; }
+    .pdf-month table {
+      width: auto !important;
+      min-width: 70%;
+      margin: 0 auto !important;
+    }
+    .pdf-month th, .pdf-month td { padding: 7px 22px !important; }
+
+    /* Évite les couleurs délavées à l'impression */
+    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  }
+</style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 via-orange-50/40 to-red-50/40 min-h-screen">
+
+<header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+  <div class="max-w-7xl mx-auto px-4 lg:px-8 py-4 flex items-center gap-3">
+    <div class="w-9 h-9 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center shadow text-white text-xl">🚛</div>
+    <div>
+      <h1 class="text-base font-bold text-gray-800 leading-tight">Samsara Reports</h1>
+      <p class="text-xs text-slate-400">Rapports de consommation — <span class="font-mono">v27 · 2026-05-29 (PDF sans en-tête navigateur)</span></p>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-6">
+
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-3xl font-bold bg-gradient-to-r from-orange-500 to-red-500 bg-clip-text text-transparent">Rapports Samsara</h1>
+      <p class="text-slate-500 mt-1">Suivi de consommation et performance de flotte</p>
+    </div>
+  </div>
+
+  <!-- Configuration -->
+  <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-10 h-10 bg-gradient-to-br from-slate-700 to-slate-900 rounded-xl flex items-center justify-center text-white">🔑</div>
+      <div>
+        <h2 class="font-semibold text-gray-800">Configuration API</h2>
+        <p class="text-xs text-slate-500">Token stocké uniquement dans votre navigateur (localStorage)</p>
+      </div>
+      <span id="configStatus" class="ml-auto"></span>
+    </div>
+
+    <div class="space-y-3">
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1.5">Région</label>
+        <div class="flex gap-2">
+          <button data-region="US" class="region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-white border-gray-200 text-slate-600">🇺🇸 États-Unis (api.samsara.com)</button>
+          <button data-region="EU" class="region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-white border-gray-200 text-slate-600">🇪🇺 Europe (api.eu.samsara.com)</button>
+        </div>
+      </div>
+
+      <div class="flex gap-3 flex-wrap">
+        <div class="relative flex-1 min-w-64">
+          <input id="tokenInput" type="text" placeholder="samsara_api_XXXXXXXXXXXXXXXXXXXXXXXXXX"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+            class="w-full pl-4 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 font-mono" />
+        </div>
+        <button id="saveBtn" class="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg disabled:opacity-50">Sauvegarder</button>
+        <button id="testBtn" class="px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50 disabled:opacity-50">🔄 Tester</button>
+        <button id="detectBtn" class="px-5 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 disabled:opacity-50">🌐 Détecter la région</button>
+        <button id="resetBtn" class="px-5 py-2.5 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm font-medium hover:bg-red-100">🗑️ Réinitialiser</button>
+      </div>
+
+      <div id="connResult"></div>
+    </div>
+  </section>
+
+  <!-- Filtres -->
+  <section id="filtersSection" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hidden">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center text-white">⚙️</div>
+      <div>
+        <h2 class="font-semibold text-gray-800">Paramètres du rapport</h2>
+        <p class="text-xs text-slate-500">Personnalisez les métriques et la période</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">📅 Période</label>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-days="0">Aujourd'hui</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-days="7">7 derniers jours</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-days="30">30 derniers jours</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-preset="thisMonth">Ce mois-ci</button>
+          <button class="quick-range text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-slate-600 hover:border-orange-300 hover:text-orange-600 hover:bg-orange-50" data-preset="lastMonth">Mois dernier</button>
+        </div>
+        <div class="flex gap-3">
+          <div class="flex-1">
+            <label class="block text-xs text-slate-500 mb-1">Début</label>
+            <input type="date" id="startDate" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+          <div class="flex-1">
+            <label class="block text-xs text-slate-500 mb-1">Fin</label>
+            <input type="date" id="endDate" class="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm" />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          🚛 Véhicules <span id="vehiclesLoading" class="text-xs text-slate-400 hidden">(chargement…)</span>
+          <span id="vehiclesCount" class="text-xs text-orange-600 font-medium ml-2"></span>
+        </label>
+        <div class="relative mb-2">
+          <input id="vehicleSearch" type="text" placeholder="🔍 Rechercher un véhicule (nom, plaque…)" class="w-full pl-4 pr-10 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300" />
+          <button id="clearSearch" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 px-2 hidden" title="Effacer">✕</button>
+        </div>
+        <div class="flex gap-2 mb-2">
+          <button id="selectAllVehicles" class="text-xs px-3 py-1 rounded-lg bg-orange-50 border border-orange-200 text-orange-700 hover:bg-orange-100 font-medium">✓ Tout sélectionner</button>
+          <button id="clearVehicles" class="text-xs px-3 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 font-medium">✗ Tout effacer</button>
+          <button id="reloadVehicles" class="ml-auto text-xs px-3 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100">🔄 Recharger</button>
+        </div>
+        <div id="vehicleCheckboxList" class="max-h-56 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100"></div>
+        <p class="text-xs text-slate-400 mt-1">Aucune sélection = tous les véhicules</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">📊 Métriques</label>
+        <label class="flex items-center gap-3 py-1 cursor-pointer">
+          <input type="checkbox" class="metric accent-orange-500 w-4 h-4" value="fuelPercents" checked />
+          <span class="text-orange-500">⛽</span><span class="text-sm">Carburant (%)</span>
+        </label>
+        <label class="flex items-center gap-3 py-1 cursor-pointer">
+          <input type="checkbox" class="metric accent-orange-500 w-4 h-4" value="obdOdometerMeters" checked />
+          <span class="text-blue-500">📍</span><span class="text-sm">Distance (km)</span>
+        </label>
+        <label class="flex items-center gap-3 py-1 cursor-pointer">
+          <input type="checkbox" class="metric accent-orange-500 w-4 h-4" value="obdEngineSeconds" checked />
+          <span class="text-green-500">⏱️</span><span class="text-sm">Heures moteur</span>
+        </label>
+      </div>
+
+    </div>
+
+    <div class="mt-6 flex flex-col sm:flex-row gap-2 sm:justify-between sm:items-center">
+      <label class="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
+        <input type="checkbox" id="comparativeMode" class="accent-orange-500 w-4 h-4" />
+        <span>📊 <strong>Rapport comparatif multi-mois</strong> — découpe la période en mois et affiche les véhicules en colonnes</span>
+      </label>
+      <button id="generateBtn" class="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-medium hover:shadow-lg flex items-center gap-2 disabled:opacity-50">
+        📈 <span id="generateLabel">Générer le rapport</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Erreur rapport -->
+  <div id="reportError" class="hidden bg-red-50 border border-red-200 rounded-2xl p-4"></div>
+
+  <!-- Résultats -->
+  <section id="resultsSection" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hidden">
+    <div class="flex items-center justify-between p-6 border-b border-gray-100 pdf-hide">
+      <div>
+        <h2 class="font-semibold text-gray-800 flex items-center gap-2">📊 <span id="resultsTitle">Résultats</span></h2>
+        <p class="text-xs text-slate-500 mt-0.5"><span id="resultsCount">0</span> véhicule(s) analysé(s)</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="exportBtn" class="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-medium hover:bg-gray-50">⬇️ Exporter CSV</button>
+        <button id="exportPdfBtn" class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl text-sm font-medium hover:shadow-lg hover:shadow-orange-500/30 transition-all" title="Ouvre la boîte d'impression — choisissez « Enregistrer au format PDF »">📄 Exporter PDF</button>
+      </div>
+    </div>
+    <div id="summaryCards" class="border-b border-gray-100"></div>
+    <div id="tableContainer" class="overflow-x-auto"></div>
+  </section>
+
+  <p class="text-center text-xs text-slate-400 pt-4">
+    🔒 Toutes les données restent dans votre navigateur. Aucun serveur intermédiaire — appels directs à l'API Samsara.
+  </p>
+</main>
+
+<script>
+'use strict';
+
+// Si la page est servie via http://localhost (le mini serveur Node), on utilise son proxy
+// pour contourner CORS. Sinon, appels directs à l'API Samsara (peut être bloqué par CORS).
+const USE_PROXY = location.protocol.startsWith('http');
+const REGIONS = USE_PROXY
+  ? { US: '/samsara-proxy/us', EU: '/samsara-proxy/eu' }
+  : { US: 'https://api.samsara.com', EU: 'https://api.eu.samsara.com' };
+const LS_KEY = 'samsara-config';
+const TANK_CAPACITY_L = 80;
+const COMPANY_NAME = 'Flamme Assainissement';
+
+const state = {
+  token: '',
+  region: 'EU',
+  vehicles: [],
+  report: null,
+  sortKey: 'name',
+  sortDir: 'asc'
+};
+
+// ============ Persistance ============
+function loadConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if (saved.token) state.token = saved.token;
+    if (saved.region) state.region = saved.region;
+  } catch {}
+}
+function saveConfigToLS() {
+  localStorage.setItem(LS_KEY, JSON.stringify({ token: state.token, region: state.region }));
+}
+
+// ============ API Samsara ============
+async function samsaraFetch(path, params = {}) {
+  if (!state.token) throw new Error('Pas de token configuré');
+  const qs = Object.entries(params)
+    .filter(([_, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v))
+    .join('&');
+  const url = REGIONS[state.region] + path + (qs ? '?' + qs : '');
+  const res = await fetch(url, {
+    headers: { 'Authorization': 'Bearer ' + state.token, 'Content-Type': 'application/json' }
+  });
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch { body = text; }
+  if (!res.ok) throw { status: res.status, body, message: typeof body === 'string' ? body : (body.message || JSON.stringify(body)) };
+  return body;
+}
+
+async function fetchAllVehicles() {
+  let all = [], cursor = null, pages = 0;
+  do {
+    const params = { limit: 512 };
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/fleet/vehicles', params);
+    all = all.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+  return all;
+}
+
+async function fetchStats(startDate, endDate, vehicleIds, metrics) {
+  const startTime = new Date(startDate).toISOString();
+  const endTime = new Date(endDate + 'T23:59:59').toISOString();
+  let all = [], cursor = null, pages = 0;
+  do {
+    const params = { startTime, endTime, types: metrics.join(','), limit: 512 };
+    if (vehicleIds.length > 0) params.vehicleIds = vehicleIds.join(',');
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/fleet/vehicles/stats/history', params);
+    all = all.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+  return all;
+}
+
+// Rapport officiel Samsara Fuel & Energy — donne litres consommés exacts.
+// Nécessite le scope "Read Fuel & Energy" sur le token API.
+// L'endpoint veut du RFC 3339 (date+heure+TZ), pas juste YYYY-MM-DD.
+async function fetchFuelEnergyReport(startDate, endDate, vehicleIds) {
+  const startISO = new Date(startDate + 'T00:00:00Z').toISOString();
+  const endISO = clampToNow(new Date(endDate + 'T23:59:59Z')).toISOString();
+  let all = [], cursor = null, pages = 0;
+  do {
+    const params = { startDate: startISO, endDate: endISO };
+    if (vehicleIds.length > 0) params.vehicleIds = vehicleIds.join(',');
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/fleet/reports/vehicles/fuel-energy', params);
+    all = all.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+  return all;
+}
+
+// Empêche d'envoyer une date dans le futur (les endpoints Samsara rejettent).
+function clampToNow(d) {
+  const now = new Date();
+  return d > now ? now : d;
+}
+
+// ============ UI helpers ============
+function fmt(val, dec = 2) {
+  if (val === null || val === undefined || isNaN(val)) return '—';
+  return Number(val).toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function maskToken(t) { return t.length > 8 ? t.slice(0, 4) + '****' + t.slice(-4) : '****'; }
+
+function setConfigStatus() {
+  const el = document.getElementById('configStatus');
+  if (state.token) {
+    el.innerHTML = '<span class="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-3 py-1.5 rounded-full">✓ Token : ' + maskToken(state.token) + ' · Région : ' + state.region + '</span>';
+  } else {
+    el.innerHTML = '<span class="inline-flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium px-3 py-1.5 rounded-full">⚠ Non configuré</span>';
+  }
+}
+function setRegionUI() {
+  document.querySelectorAll('.region-btn').forEach(b => {
+    if (b.dataset.region === state.region) {
+      b.className = 'region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-orange-50 border-orange-300 text-orange-700 ring-2 ring-orange-200';
+    } else {
+      b.className = 'region-btn flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border bg-white border-gray-200 text-slate-600 hover:border-gray-300';
+    }
+  });
+}
+
+function showConnResult(html) {
+  document.getElementById('connResult').innerHTML = html;
+}
+
+// ============ Actions ============
+async function testConnection() {
+  showConnResult('<p class="mt-3 text-sm text-slate-500">Test en cours...</p>');
+  try {
+    const data = await samsaraFetch('/fleet/vehicles', { limit: 1 });
+    const count = data?.data?.length ?? 0;
+    showConnResult('<div class="mt-3 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700"><strong>✓ Connexion réussie</strong> — Région ' + state.region + ', ' + count + ' véhicule(s) détecté(s) dans le test.</div>');
+    await loadVehicles();
+    document.getElementById('filtersSection').classList.remove('hidden');
+  } catch (err) {
+    showConnResult('<div class="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700"><strong>✗ Échec :</strong> ' + (err.message || err) + (err.status ? ' (HTTP ' + err.status + ')' : '') + '<br><span class="text-xs">Vérifiez le token et la région. Pensez à "Détecter la région" si vous avez un doute.</span></div>');
+  }
+}
+
+async function detectRegion() {
+  if (!state.token) return;
+  showConnResult('<p class="mt-3 text-sm text-slate-500">Test des deux régions en cours...</p>');
+  const results = {};
+  for (const region of ['US', 'EU']) {
+    try {
+      const url = REGIONS[region] + '/fleet/vehicles?limit=1';
+      const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + state.token } });
+      const text = await r.text();
+      let body; try { body = JSON.parse(text); } catch { body = text; }
+      results[region] = { ok: r.ok, status: r.status, body };
+    } catch (err) {
+      results[region] = { ok: false, error: err.message };
+    }
+  }
+  const winner = Object.entries(results).find(([_, r]) => r.ok)?.[0];
+  if (winner) {
+    state.region = winner;
+    saveConfigToLS();
+    setRegionUI();
+    showConnResult('<div class="mt-3 bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-700"><strong>✓ Région détectée : ' + winner + '</strong> — ' + (results[winner].body?.data?.length ?? 0) + ' véhicule(s) trouvé(s) dans le test.</div>');
+    await testConnection();
+  } else {
+    const detail = JSON.stringify(results, null, 2);
+    showConnResult('<div class="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700"><strong>✗ Token rejeté sur les deux régions</strong> — il est probablement invalide ou révoqué.<br>Régénérez un token dans Samsara Cloud → Paramètres → Accès API.<pre class="text-xs mt-2 whitespace-pre-wrap">' + detail + '</pre></div>');
+  }
+}
+
+async function loadVehicles() {
+  document.getElementById('vehiclesLoading').classList.remove('hidden');
+  try {
+    state.vehicles = await fetchAllVehicles();
+    renderVehicleCheckboxes();
+    updateVehicleCount();
+  } catch (err) {
+    console.error(err);
+  } finally {
+    document.getElementById('vehiclesLoading').classList.add('hidden');
+  }
+}
+
+function renderVehicleCheckboxes() {
+  const list = document.getElementById('vehicleCheckboxList');
+  list.innerHTML = '';
+  state.vehicles.forEach(v => {
+    const id = 'vchk_' + v.id;
+    const haystack = ((v.name || '') + ' ' + (v.licensePlate || '') + ' ' + v.id).toLowerCase();
+    const label = document.createElement('label');
+    label.htmlFor = id;
+    label.dataset.search = haystack;
+    label.className = 'vehicle-row flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-orange-50 transition-colors select-none';
+    label.innerHTML =
+      '<input type="checkbox" id="' + id + '" value="' + escapeHtml(v.id) + '" class="vehicle-chk w-4 h-4 accent-orange-500 flex-shrink-0" />' +
+      '<span class="font-mono text-sm text-slate-700">' + escapeHtml(v.name || v.id) + '</span>' +
+      (v.licensePlate ? '<span class="ml-auto text-xs text-slate-400">' + escapeHtml(v.licensePlate) + '</span>' : '');
+    label.querySelector('input').addEventListener('change', updateVehicleCount);
+    list.appendChild(label);
+  });
+  applyVehicleSearch();
+}
+
+function applyVehicleSearch() {
+  const q = (document.getElementById('vehicleSearch')?.value || '').trim().toLowerCase();
+  let visible = 0;
+  document.querySelectorAll('.vehicle-row').forEach(row => {
+    const match = !q || row.dataset.search.includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  const clearBtn = document.getElementById('clearSearch');
+  if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+  const list = document.getElementById('vehicleCheckboxList');
+  let empty = list.querySelector('.vehicle-empty');
+  if (visible === 0 && q) {
+    if (!empty) {
+      empty = document.createElement('div');
+      empty.className = 'vehicle-empty px-4 py-6 text-center text-sm text-slate-400';
+      empty.textContent = 'Aucun véhicule ne correspond.';
+      list.appendChild(empty);
+    }
+  } else if (empty) {
+    empty.remove();
+  }
+}
+
+function getVisibleVehicleCheckboxes() {
+  return Array.from(document.querySelectorAll('.vehicle-row'))
+    .filter(r => r.style.display !== 'none')
+    .map(r => r.querySelector('.vehicle-chk'));
+}
+
+function getSelectedVehicleIds() {
+  return Array.from(document.querySelectorAll('.vehicle-chk:checked')).map(c => c.value);
+}
+
+function updateVehicleCount() {
+  const total = document.querySelectorAll('.vehicle-chk').length;
+  const selected = document.querySelectorAll('.vehicle-chk:checked').length;
+  const el = document.getElementById('vehiclesCount');
+  if (!el) return;
+  if (selected === 0) el.textContent = '(' + total + ' disponibles — aucun coché = tous)';
+  else el.textContent = '(' + selected + '/' + total + ' sélectionné' + (selected > 1 ? 's' : '') + ')';
+}
+
+function applyQuickRange(opts) {
+  const now = new Date();
+  const fmtDate = d => d.toISOString().slice(0, 10);
+  let start, end = now;
+  if (opts.days !== undefined) {
+    if (opts.days === 0) start = new Date(now);
+    else { start = new Date(now); start.setDate(start.getDate() - opts.days); }
+  } else if (opts.preset === 'thisMonth') {
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+  } else if (opts.preset === 'lastMonth') {
+    start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    end = new Date(now.getFullYear(), now.getMonth(), 0);
+  }
+  document.getElementById('startDate').value = fmtDate(start);
+  document.getElementById('endDate').value = fmtDate(end);
+}
+
+async function generateReport() {
+  const startDate = document.getElementById('startDate').value;
+  const endDate = document.getElementById('endDate').value;
+  const metrics = Array.from(document.querySelectorAll('.metric:checked')).map(c => c.value);
+  const vehicleIds = getSelectedVehicleIds();
+  const comparative = document.getElementById('comparativeMode').checked;
+
+  if (!startDate || !endDate) {
+    document.getElementById('reportError').textContent = 'Sélectionnez une période';
+    document.getElementById('reportError').classList.remove('hidden');
+    return;
+  }
+  if (metrics.length === 0 && !comparative) {
+    document.getElementById('reportError').textContent = 'Sélectionnez au moins une métrique';
+    document.getElementById('reportError').classList.remove('hidden');
+    return;
+  }
+
+  document.getElementById('reportError').classList.add('hidden');
+  document.getElementById('generateLabel').textContent = 'Génération...';
+  document.getElementById('generateBtn').disabled = true;
+
+  if (comparative) {
+    try {
+      await generateComparativeReport(startDate, endDate, vehicleIds);
+    } catch (err) {
+      document.getElementById('reportError').innerHTML = '<strong class="text-red-700">Erreur :</strong> <span class="text-red-600">' + (err.message || err) + '</span>';
+      document.getElementById('reportError').classList.remove('hidden');
+    } finally {
+      document.getElementById('generateLabel').textContent = 'Générer le rapport';
+      document.getElementById('generateBtn').disabled = false;
+    }
+    return;
+  }
+
+  try {
+    const wantFuel = metrics.includes('fuelPercents');
+    const wantDist = metrics.includes('obdOdometerMeters');
+    const wantHours = metrics.includes('obdEngineSeconds');
+
+    // --- Diagnostic : on capture tout ce qui sort de Samsara pour l'afficher ---
+    const diag = {
+      batches: [],     // [{ types, ok, error, vehicleCount }]
+      fuelEnergy: null, // { ok, error, vehicleCount }
+      trips: null,      // { ok, error, totalTrips }
+      perVehicle: {}    // { id: { name, statsReceived: [...], sources: {...} } }
+    };
+
+    // --- Lots de stats à fetcher (Samsara limite à 3 types/appel pour /stats/history) ---
+    const batches = [];
+    if (wantFuel || wantDist || wantHours) batches.push(['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds']);
+    if (wantDist || wantHours) batches.push(['gpsOdometerMeters', 'gpsDistanceMeters', 'engineStates']);
+    // Nouveaux types Samsara (peuvent être rejetés sur anciens comptes — on catch)
+    batches.push(['fuelConsumedMilliliters', 'idlingDurationMilliseconds']);
+
+    const merged = {};
+    const accumulate = list => {
+      list.forEach(v => {
+        if (!merged[v.id]) merged[v.id] = { id: v.id, name: v.name || v.id };
+        Object.keys(v).forEach(k => {
+          if (k === 'id' || k === 'name') return;
+          if (Array.isArray(v[k])) merged[v.id][k] = (merged[v.id][k] || []).concat(v[k]);
+        });
+      });
+    };
+
+    for (const types of batches) {
+      try {
+        const data = await fetchStats(startDate, endDate, vehicleIds, types);
+        accumulate(data);
+        diag.batches.push({ types, ok: true, vehicleCount: data.length });
+      } catch (e) {
+        const msg = e.message || JSON.stringify(e);
+        console.warn('[fetchStats KO] ' + types.join(',') + ' :', msg);
+        diag.batches.push({ types, ok: false, error: msg });
+      }
+    }
+
+    // --- Rapport officiel Fuel & Energy (litres exacts, sans capacité à estimer) ---
+    const fuelEnergyByVehicle = {};
+    if (wantFuel) {
+      try {
+        const fe = await fetchFuelEnergyReport(startDate, endDate, vehicleIds);
+        fe.forEach(row => { fuelEnergyByVehicle[row.vehicle?.id || row.id] = row; });
+        diag.fuelEnergy = { ok: true, vehicleCount: fe.length };
+        console.log('[Fuel & Energy] ' + fe.length + ' véhicules, exemple :', fe[0]);
+      } catch (e) {
+        const msg = e.message || JSON.stringify(e);
+        console.warn('[Fuel & Energy KO] (peut nécessiter le scope "Read Fuel & Energy") :', msg);
+        diag.fuelEnergy = { ok: false, error: msg };
+      }
+    }
+
+    // --- Trips : conso/distance/durée par trajet ---
+    let tripsByVehicle = {};
+    try {
+      tripsByVehicle = await fetchTripsForPeriod(
+        new Date(startDate).toISOString(),
+        new Date(endDate + 'T23:59:59').toISOString(),
+        vehicleIds
+      );
+      const total = Object.values(tripsByVehicle).reduce((acc, t) => acc + t.length, 0);
+      diag.trips = { ok: true, totalTrips: total };
+      console.log('[Trips] ' + total + ' trajets au total, exemple :', Object.values(tripsByVehicle)[0]?.[0]);
+    } catch (e) {
+      diag.trips = { ok: false, error: e.message || JSON.stringify(e) };
+    }
+
+    // Si on n'a aucune info pour un véhicule sélectionné, on le crée quand même
+    const idsToProcess = vehicleIds.length > 0 ? vehicleIds : Object.keys(merged);
+    idsToProcess.forEach(id => {
+      if (!merged[id]) {
+        const veh = state.vehicles.find(x => x.id === id);
+        merged[id] = { id, name: veh?.name || id };
+      }
+    });
+
+    const report = Object.values(merged).map(v => {
+      const r = { id: v.id, name: v.name, sources: {} };
+      const trips = tripsByVehicle[v.id] || [];
+      const feRow = fuelEnergyByVehicle[v.id];
+
+      // --- CARBURANT ---
+      if (wantFuel) {
+        const [fs, fe] = firstLastNumber(v.fuelPercents, 'percentage', 'percent');
+        r.fuelStart = fs; r.fuelEnd = fe;
+        r.fuelDelta = fs != null && fe != null ? +(fs - fe).toFixed(2) : null;
+        if (fs != null) r.sources.fuel = 'fuelPercents';
+
+        // Litres directs depuis Fuel & Energy Report (le plus fiable)
+        if (feRow) {
+          const lit = feRow.totalFuelConsumedMl ?? feRow.fuelConsumedMl ?? feRow.totalFuelVolumeMl;
+          if (typeof lit === 'number') {
+            r.litersDirect = +(lit / 1000).toFixed(2);
+            r.sources.liters = 'fuel-energy-report';
+          }
+        }
+        // Fallback : delta fuelConsumedMilliliters (cumulatif)
+        if (r.litersDirect == null) {
+          const [a, b] = firstLastNumber(v.fuelConsumedMilliliters);
+          if (a != null && b != null) {
+            r.litersDirect = +Math.max(0, (b - a) / 1000).toFixed(2);
+            r.sources.liters = 'fuelConsumedMilliliters';
+          }
+        }
+        // Fallback : somme conso des trips
+        if (r.litersDirect == null && trips.length) {
+          let totalMl = 0, found = false;
+          trips.forEach(t => {
+            if (typeof t.fuelConsumedMl === 'number') { totalMl += t.fuelConsumedMl; found = true; }
+            else if (typeof t.gallonsConsumed === 'number') { totalMl += t.gallonsConsumed * 3785.41; found = true; }
+          });
+          if (found) { r.litersDirect = +(totalMl / 1000).toFixed(2); r.sources.liters = 'trips'; }
+        }
+      }
+
+      // --- DISTANCE ---
+      if (wantDist) {
+        r.distanceKm = null;
+        for (const key of ['obdOdometerMeters', 'gpsOdometerMeters']) {
+          const [a, b] = firstLastNumber(v[key], 'meters');
+          if (a != null && b != null) {
+            r.distanceKm = +Math.max(0, (b - a) / 1000).toFixed(2);
+            r.sources.distance = key; break;
+          }
+        }
+        // gpsDistanceMeters est cumulatif (delta, pas somme)
+        if (r.distanceKm == null) {
+          const [a, b] = firstLastNumber(v.gpsDistanceMeters, 'meters');
+          if (a != null && b != null) {
+            r.distanceKm = +Math.max(0, (b - a) / 1000).toFixed(2);
+            r.sources.distance = 'gpsDistanceMeters';
+          }
+        }
+        if (r.distanceKm == null && trips.length) {
+          const total = trips.reduce((acc, t) => acc + (t.distanceMeters || 0), 0);
+          if (total > 0) { r.distanceKm = +(total / 1000).toFixed(2); r.sources.distance = 'trips'; }
+        }
+        if (r.distanceKm == null && feRow && typeof feRow.distanceMeters === 'number') {
+          r.distanceKm = +(feRow.distanceMeters / 1000).toFixed(2);
+          r.sources.distance = 'fuel-energy-report';
+        }
+      }
+
+      // --- HEURES MOTEUR ---
+      if (wantHours) {
+        r.engineHours = null;
+        const [es, ee] = firstLastNumber(v.obdEngineSeconds, 'engineSeconds');
+        if (es != null && ee != null) {
+          r.engineHours = +Math.max(0, (ee - es) / 3600).toFixed(2);
+          r.sources.hours = 'obdEngineSeconds';
+        } else if (Array.isArray(v.engineStates) && v.engineStates.length >= 2) {
+          const s = [...v.engineStates].sort((a, b) => new Date(a.time) - new Date(b.time));
+          let onSec = 0;
+          for (let i = 0; i < s.length - 1; i++) {
+            const name = extractStateName(s[i].value);
+            if (name === 'On' || name === 'Idle' || name === 'Driving') {
+              onSec += (new Date(s[i + 1].time) - new Date(s[i].time)) / 1000;
+            }
+          }
+          if (onSec > 0) { r.engineHours = +(onSec / 3600).toFixed(2); r.sources.hours = 'engineStates'; }
+        }
+        if (r.engineHours == null && trips.length) {
+          let driveMs = 0, idleMs = 0;
+          trips.forEach(t => {
+            if (typeof t.driveDurationMs === 'number') driveMs += t.driveDurationMs;
+            if (typeof t.idleTimeMs === 'number') idleMs += t.idleTimeMs;
+          });
+          const tot = driveMs + idleMs;
+          if (tot > 0) { r.engineHours = +(tot / 3600000).toFixed(2); r.sources.hours = 'trips'; }
+        }
+      }
+
+      const statsReceived = Object.keys(v).filter(k => Array.isArray(v[k]) && v[k].length);
+      diag.perVehicle[v.id] = { name: r.name, statsReceived, sources: r.sources };
+      console.log('[Rapport] ' + r.name + ' →', r.sources, '(stats reçues: ' + statsReceived.join(',') + ')');
+      return r;
+    });
+    state.report = { data: report, startDate, endDate, metrics, diag };
+    renderResults();
+  } catch (err) {
+    document.getElementById('reportError').innerHTML = '<strong class="text-red-700">Erreur lors de la génération :</strong> <span class="text-red-600">' + (err.message || err) + '</span>';
+    document.getElementById('reportError').classList.remove('hidden');
+  } finally {
+    document.getElementById('generateLabel').textContent = 'Générer le rapport';
+    document.getElementById('generateBtn').disabled = false;
+  }
+}
+
+// ============ Rapport comparatif multi-mois ============
+function monthRanges(startStr, endStr) {
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T23:59:59');
+  const months = [];
+  const FR = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cur <= end) {
+    const mStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
+    const mEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0, 23, 59, 59);
+    const a = mStart < start ? start : mStart;
+    const b = mEnd > end ? end : mEnd;
+    months.push({
+      key: cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0'),
+      label: FR[cur.getMonth()] + ' ' + cur.getFullYear(),
+      startISO: a.toISOString(),
+      endISO: b.toISOString(),
+      startDate: a.toISOString().slice(0, 10),
+      endDate: b.toISOString().slice(0, 10)
+    });
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+  return months;
+}
+
+function extractStateName(v) {
+  if (typeof v === 'string') return v;
+  return v?.value || v?.engineState || v?.gpsState || v?.name || '';
+}
+
+function firstLastNumber(arr, ...keys) {
+  if (!Array.isArray(arr) || arr.length < 2) return [null, null];
+  const s = [...arr].sort((a, b) => new Date(a.time) - new Date(b.time));
+  const read = x => {
+    const v = x.value;
+    if (typeof v === 'number') return v;
+    for (const k of keys) if (v && typeof v[k] === 'number') return v[k];
+    return null;
+  };
+  return [read(s[0]), read(s[s.length - 1])];
+}
+
+function computeVehicleMonth(stats, cap, tripsForVehicle, feRow, effRow, idleRow) {
+  const res = { liters: null, km: null, hours: null, lPer100: null, fuelRate: null, idleHours: null, ptoHours: null, idlePct: null, ptoPct: null };
+  const sources = {};
+
+  // ---- LITRES ----
+  // 0) Rapport officiel Fuel & Energy (source la plus fiable, gère plein + capacité)
+  // On exige > 0 : un 0 peut signifier "Samsara n'a pas de fuel sensor" plutôt
+  // qu'une vraie absence de consommation. On laissera les fallbacks tenter mieux.
+  if (feRow) {
+    const lit = feRow.totalFuelConsumedMl ?? feRow.fuelConsumedMl ?? feRow.totalFuelVolumeMl;
+    if (typeof lit === 'number' && lit > 0) { res.liters = +(lit / 1000).toFixed(2); sources.liters = 'fuel-energy-report'; }
+  }
+  // 0bis) Driver Efficiency (fuelConsumedMl agrégé tous conducteurs)
+  if (res.liters == null && effRow && typeof effRow.fuelConsumedMl === 'number' && effRow.fuelConsumedMl > 0) {
+    res.liters = +(effRow.fuelConsumedMl / 1000).toFixed(2);
+    sources.liters = 'driver-efficiency';
+  }
+  // 0bis) fuelConsumedMilliliters cumulatif via stats history
+  if (res.liters == null) {
+    const [a, b] = firstLastNumber(stats.fuelConsumedMilliliters);
+    if (a != null && b != null) {
+      res.liters = +Math.max(0, (b - a) / 1000).toFixed(2);
+      sources.liters = 'fuelConsumedMilliliters';
+    }
+  }
+  // 1) fuelLevelLiters / obdFuelLevelLiters : delta direct en litres
+  if (res.liters == null) {
+    for (const key of ['fuelLevelLiters', 'obdFuelLevelLiters']) {
+      const [a, b] = firstLastNumber(stats[key], 'liters', 'fuelLevelLiters');
+      if (a != null && b != null) {
+        res.liters = +Math.max(0, a - b).toFixed(2);
+        sources.liters = key; break;
+      }
+    }
+  }
+  // 2) fuelPercents × capacité
+  if (res.liters == null && cap > 0) {
+    const [a, b] = firstLastNumber(stats.fuelPercents, 'percentage', 'percent');
+    if (a != null && b != null) {
+      res.liters = +Math.max(0, ((a - b) / 100) * cap).toFixed(2);
+      sources.liters = 'fuelPercents×' + cap + 'L';
+    }
+  }
+  // 3) Litres depuis les trips (gallonsConsumed ou fuelConsumedMl)
+  if (res.liters == null && tripsForVehicle?.length) {
+    let total = 0, found = false;
+    tripsForVehicle.forEach(t => {
+      if (typeof t.fuelConsumedMl === 'number') { total += t.fuelConsumedMl / 1000; found = true; }
+      else if (typeof t.gallonsConsumed === 'number') { total += t.gallonsConsumed * 3.78541; found = true; }
+    });
+    if (found) { res.liters = +total.toFixed(2); sources.liters = 'trips'; }
+  }
+
+  // ---- DISTANCE ----
+  for (const key of ['obdOdometerMeters', 'gpsOdometerMeters']) {
+    const [a, b] = firstLastNumber(stats[key], 'meters');
+    if (a != null && b != null) {
+      res.km = +Math.max(0, (b - a) / 1000).toFixed(2);
+      sources.km = key; break;
+    }
+  }
+  // gpsDistanceMeters est CUMULATIF depuis installation du gateway (doc Samsara),
+  // pas incrémental. Donc c'est delta (last - first), pas la somme.
+  if (res.km == null) {
+    const [a, b] = firstLastNumber(stats.gpsDistanceMeters, 'meters');
+    if (a != null && b != null) {
+      res.km = +Math.max(0, (b - a) / 1000).toFixed(2);
+      sources.km = 'gpsDistanceMeters';
+    }
+  }
+  if (res.km == null && tripsForVehicle?.length) {
+    const total = tripsForVehicle.reduce((acc, t) => acc + (t.distanceMeters || 0), 0);
+    if (total > 0) { res.km = +(total / 1000).toFixed(2); sources.km = 'trips'; }
+  }
+  if (res.km == null && feRow && typeof feRow.distanceMeters === 'number') {
+    res.km = +(feRow.distanceMeters / 1000).toFixed(2);
+    sources.km = 'fuel-energy-report';
+  }
+  if (res.km == null && effRow && effRow.distanceDrivenMeters > 0) {
+    res.km = +(effRow.distanceDrivenMeters / 1000).toFixed(2);
+    sources.km = 'driver-efficiency';
+  }
+
+  // ---- HEURES MOTEUR ----
+  const [a, b] = firstLastNumber(stats.obdEngineSeconds, 'engineSeconds');
+  if (a != null && b != null) {
+    res.hours = +Math.max(0, (b - a) / 3600).toFixed(2);
+    sources.hours = 'obdEngineSeconds';
+  }
+  if (res.hours == null && feRow && typeof feRow.engineRunTimeMs === 'number') {
+    res.hours = +(feRow.engineRunTimeMs / 3600000).toFixed(2);
+    sources.hours = 'fuel-energy-report';
+  }
+  // Driver Efficiency : drive + idle + PTO ≈ heures moteur
+  if (res.hours == null && effRow) {
+    const totalMs = (effRow.driveTimeDurationMs || 0) + (effRow.idleTimeDurationMs || 0) + (effRow.powerTakeOffDurationMs || 0);
+    if (totalMs > 0) {
+      res.hours = +(totalMs / 3600000).toFixed(2);
+      sources.hours = 'driver-efficiency';
+    }
+  }
+
+  // ---- engineStates : Idle / On / Driving / Off ----
+  if (Array.isArray(stats.engineStates) && stats.engineStates.length >= 2) {
+    const s = [...stats.engineStates].sort((a, b) => new Date(a.time) - new Date(b.time));
+    const buckets = { Idle: 0, On: 0, Driving: 0, Off: 0 };
+    for (let i = 0; i < s.length - 1; i++) {
+      const name = extractStateName(s[i].value);
+      const dur = (new Date(s[i + 1].time) - new Date(s[i].time)) / 1000;
+      if (buckets[name] !== undefined) buckets[name] += dur;
+    }
+    res.idleHours = +(buckets.Idle / 3600).toFixed(2);
+    sources.idle = 'engineStates';
+    if (res.hours == null) {
+      const onSec = buckets.Idle + buckets.On + buckets.Driving;
+      if (onSec > 0) { res.hours = +(onSec / 3600).toFixed(2); sources.hours = 'engineStates'; }
+    }
+  }
+
+  // ---- Trips → idle / drive ----
+  if (res.idleHours == null && tripsForVehicle?.length) {
+    let idleMs = 0, hasIdle = false;
+    tripsForVehicle.forEach(t => {
+      if (typeof t.idleTimeMs === 'number') { idleMs += t.idleTimeMs; hasIdle = true; }
+    });
+    if (hasIdle) { res.idleHours = +(idleMs / 3600000).toFixed(2); sources.idle = 'trips'; }
+  }
+  if (res.hours == null && tripsForVehicle?.length) {
+    let driveMs = 0, idleMs = 0;
+    tripsForVehicle.forEach(t => {
+      if (typeof t.driveDurationMs === 'number') driveMs += t.driveDurationMs;
+      if (typeof t.idleTimeMs === 'number') idleMs += t.idleTimeMs;
+    });
+    const tot = driveMs + idleMs;
+    if (tot > 0) { res.hours = +(tot / 3600000).toFixed(2); sources.hours = 'trips'; }
+  }
+
+  // ---- IDLE depuis Driver Efficiency ou Idling Events (fallback) ----
+  if (res.idleHours == null && effRow && effRow.idleTimeDurationMs > 0) {
+    res.idleHours = +(effRow.idleTimeDurationMs / 3600000).toFixed(2);
+    sources.idle = 'driver-efficiency';
+  }
+  if (res.idleHours == null && idleRow && idleRow.totalIdleMs > 0) {
+    res.idleHours = +(idleRow.totalIdleMs / 3600000).toFixed(2);
+    sources.idle = 'idling-events';
+  }
+
+  // ---- PTO : auxInput → Driver Efficiency → Idling Events ----
+  let ptoSec = 0, hasAux = false;
+  ['auxInput1', 'auxInput2', 'auxInput3', 'auxInput4', 'auxInput5', 'auxInput6', 'auxInput7'].forEach(k => {
+    if (!Array.isArray(stats[k]) || stats[k].length < 2) return;
+    hasAux = true;
+    const s = [...stats[k]].sort((a, b) => new Date(a.time) - new Date(b.time));
+    for (let i = 0; i < s.length - 1; i++) {
+      const v = s[i].value;
+      const active = v === true || v === 'Active' || v === 'On' || v?.value === 'Active' || v?.value === 'On' || v?.active === true;
+      if (active) ptoSec += (new Date(s[i + 1].time) - new Date(s[i].time)) / 1000;
+    }
+  });
+  if (hasAux) {
+    res.ptoHours = +(ptoSec / 3600).toFixed(2);
+    sources.pto = 'auxInputs';
+  }
+  if (res.ptoHours == null && effRow && effRow.powerTakeOffDurationMs > 0) {
+    res.ptoHours = +(effRow.powerTakeOffDurationMs / 3600000).toFixed(2);
+    sources.pto = 'driver-efficiency';
+  }
+  if (res.ptoHours == null && idleRow && idleRow.totalPtoMs > 0) {
+    res.ptoHours = +(idleRow.totalPtoMs / 3600000).toFixed(2);
+    sources.pto = 'idling-events';
+  }
+
+  if (res.liters != null && res.km > 0) res.lPer100 = +((res.liters / res.km) * 100).toFixed(1);
+  if (res.liters != null && res.hours > 0) res.fuelRate = +(res.liters / res.hours).toFixed(2);
+  if (res.idleHours != null && res.hours > 0) res.idlePct = +((res.idleHours / res.hours) * 100).toFixed(1);
+  if (res.ptoHours != null && res.hours > 0) res.ptoPct = +((res.ptoHours / res.hours) * 100).toFixed(1);
+  res._sources = sources;
+  return res;
+}
+
+function formatHMin(hours) {
+  if (hours == null || isNaN(hours)) return '—';
+  const h = Math.floor(hours);
+  const m = Math.round((hours - h) * 60);
+  return h + 'h ' + String(m).padStart(2, '0') + 'min';
+}
+
+async function generateComparativeReport(startDate, endDate, vehicleIds) {
+  const cap = TANK_CAPACITY_L;
+  const company = COMPANY_NAME;
+
+  const months = monthRanges(startDate, endDate);
+  if (months.length === 0) throw new Error('Période invalide');
+
+  // Samsara limite à 3 types/appel sur /stats/history.
+  // On fait plusieurs appels indépendants pour couvrir TOUTES les sources utiles.
+  const statBatches = [
+    ['fuelPercents', 'obdOdometerMeters', 'obdEngineSeconds'],
+    ['gpsOdometerMeters', 'gpsDistanceMeters', 'engineStates'],
+    ['auxInput1', 'auxInput2', 'auxInput3'],
+    ['fuelConsumedMilliliters', 'idlingDurationMilliseconds']
+  ];
+
+  const debugLog = [];
+  const matrix = [];
+  for (let i = 0; i < months.length; i++) {
+    const m = months[i];
+    document.getElementById('generateLabel').textContent = 'Mois ' + (i + 1) + '/' + months.length + '…';
+
+    // Lancer tous les batches de stats + Fuel & Energy + Trips
+    const merged = {};
+    const batchResults = [];
+    const accumulate = list => {
+      list.forEach(v => {
+        if (!merged[v.id]) merged[v.id] = { id: v.id, name: v.name || v.id };
+        Object.keys(v).forEach(k => {
+          if (k === 'id' || k === 'name') return;
+          if (Array.isArray(v[k])) merged[v.id][k] = (merged[v.id][k] || []).concat(v[k]);
+        });
+      });
+    };
+    for (const types of statBatches) {
+      try {
+        const data = await fetchStatsRange(m.startISO, m.endISO, vehicleIds, types);
+        accumulate(data);
+        batchResults.push({ types, ok: true, count: data.length });
+      } catch (err) {
+        console.warn('[' + m.label + '] batch ' + types.join(',') + ' KO :', err.message);
+        batchResults.push({ types, ok: false, error: err.message });
+      }
+    }
+
+    // Rapport Fuel & Energy (litres exacts)
+    let feByVehicle = {};
+    let feMeta = null;
+    try {
+      const fe = await fetchFuelEnergyReport(m.startDate, m.endDate, vehicleIds);
+      fe.forEach(row => { feByVehicle[row.vehicle?.id || row.id] = row; });
+      feMeta = { ok: true, count: fe.length };
+    } catch (err) {
+      feMeta = { ok: false, error: err.message };
+      console.warn('[' + m.label + '] Fuel & Energy KO :', err.message);
+    }
+
+    // Trips pour le mois — fournit distance, drive/idle time, et parfois conso carburant
+    let tripsByVehicle = {}, tripsMeta = null;
+    try {
+      tripsByVehicle = await fetchTripsForPeriod(m.startISO, m.endISO, vehicleIds);
+      const total = Object.values(tripsByVehicle).reduce((a, t) => a + t.length, 0);
+      tripsMeta = { ok: true, total };
+    } catch (err) {
+      tripsMeta = { ok: false, error: err.message };
+    }
+
+    // Driver Efficiency — agrégats par véhicule (PTO, fuel, idle même sans OBD)
+    let effByVehicle = {}, effMeta = null;
+    try {
+      effByVehicle = await fetchDriverEfficiencyByVehicle(m.startISO, m.endISO);
+      effMeta = { ok: true, count: Object.keys(effByVehicle).length };
+    } catch (err) {
+      effMeta = { ok: false, error: err.message };
+    }
+
+    // Idling Events — pour PTO actif et idle total
+    let idlingByVehicle = {}, idlingMeta = null;
+    try {
+      idlingByVehicle = await fetchIdlingByVehicle(m.startISO, m.endISO, vehicleIds);
+      idlingMeta = { ok: true, count: Object.keys(idlingByVehicle).length };
+    } catch (err) {
+      idlingMeta = { ok: false, error: err.message };
+    }
+
+    const raw = Object.values(merged);
+    const perVehicle = {};
+    raw.forEach(v => {
+      const availableKeys = Object.keys(v).filter(k => Array.isArray(v[k]) && v[k].length > 0);
+      const ctx = {
+        trips: tripsByVehicle[v.id] || [],
+        feRow: feByVehicle[v.id] || null,
+        effRow: effByVehicle[v.id] || null,
+        idleRow: idlingByVehicle[v.id] || null
+      };
+      console.log('[' + m.label + '] ' + (v.name || v.id) + ' — stats:', availableKeys.join(', ') || '(aucune)', '| trips:', ctx.trips.length, '| F&E:', ctx.feRow ? '✓' : '✗', '| eff:', ctx.effRow ? '✓' : '✗', '| idle:', ctx.idleRow ? '✓' : '✗');
+      debugLog.push({ month: m.label, vehicle: v.name || v.id, stats: availableKeys, trips: ctx.trips.length, fuelEnergy: !!ctx.feRow, eff: !!ctx.effRow, idle: !!ctx.idleRow });
+      perVehicle[v.id] = {
+        id: v.id,
+        name: v.name || v.id,
+        ...computeVehicleMonth(v, cap, ctx.trips, ctx.feRow, ctx.effRow, ctx.idleRow)
+      };
+    });
+    // véhicules sans aucune stat reçue → on les ajoute pour qu'ils apparaissent quand même
+    vehicleIds.forEach(id => {
+      if (!perVehicle[id]) {
+        const trips = tripsByVehicle[id] || [];
+        const feRow = feByVehicle[id] || null;
+        const effRow = effByVehicle[id] || null;
+        const idleRow = idlingByVehicle[id] || null;
+        const veh = state.vehicles.find(x => x.id === id);
+        perVehicle[id] = {
+          id, name: veh?.name || id,
+          ...computeVehicleMonth({}, cap, trips, feRow, effRow, idleRow)
+        };
+        debugLog.push({ month: m.label, vehicle: veh?.name || id, stats: [], trips: trips.length, fuelEnergy: !!feRow, eff: !!effRow, idle: !!idleRow });
+      }
+    });
+    matrix.push({
+      ...m,
+      perVehicle,
+      usedTypes: statBatches.flat(),
+      diag: { batches: batchResults, fuelEnergy: feMeta, trips: tripsMeta, eff: effMeta, idling: idlingMeta }
+    });
+  }
+  console.table(debugLog);
+
+  const idSet = new Set();
+  matrix.forEach(m => Object.keys(m.perVehicle).forEach(id => idSet.add(id)));
+  if (vehicleIds.length > 0) {
+    vehicleIds.forEach(id => idSet.add(id));
+  }
+  const allVehicles = Array.from(idSet).map(id => {
+    const v = state.vehicles.find(x => x.id === id);
+    const fromMatrix = matrix.find(m => m.perVehicle[id])?.perVehicle[id];
+    return { id, name: v?.name || fromMatrix?.name || id };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  state.report = { mode: 'comparative', company, startDate, endDate, months: matrix, vehicles: allVehicles };
+  renderComparative();
+}
+
+// Rapport d'efficacité par conducteur (beta) — gère période ≤ 31 jours.
+// Renvoie pour chaque véhicule (agrégé sur tous ses conducteurs) :
+// distance, drive time, fuel, idle time, PTO duration.
+async function fetchDriverEfficiencyByVehicle(startISO, endISO) {
+  const safeEnd = clampToNow(new Date(endISO)).toISOString();
+  let drivers = [], cursor = null, pages = 0;
+  do {
+    const params = { startTime: startISO, endTime: safeEnd };
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/beta/fleet/drivers/efficiency', params);
+    drivers = drivers.concat(data.data?.driverSummaries || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+
+  const byVehicle = {};
+  drivers.forEach(d => {
+    (d.vehicleSummaries || []).forEach(vs => {
+      const vid = vs.vehicle?.id;
+      if (!vid) return;
+      if (!byVehicle[vid]) byVehicle[vid] = { distanceDrivenMeters: 0, driveTimeDurationMs: 0, fuelConsumedMl: 0, idleTimeDurationMs: 0, powerTakeOffDurationMs: 0 };
+      ['distanceDrivenMeters', 'driveTimeDurationMs', 'fuelConsumedMl', 'idleTimeDurationMs', 'powerTakeOffDurationMs'].forEach(k => {
+        byVehicle[vid][k] += vs[k] || 0;
+      });
+    });
+  });
+  return byVehicle;
+}
+
+// Événements d'idle agrégés par véhicule. ptoState indique si l'idle est PTO actif.
+async function fetchIdlingByVehicle(startISO, endISO, vehicleIds) {
+  const safeEnd = clampToNow(new Date(endISO)).toISOString();
+  let events = [], cursor = null, pages = 0;
+  do {
+    // L'endpoint exige limit ≤ 200
+    const params = { startTime: startISO, endTime: safeEnd, limit: 200 };
+    if (vehicleIds.length > 0) params.assetIds = vehicleIds.join(',');
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/idling/events', params);
+    events = events.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 200) break; // période avec beaucoup d'événements
+  } while (cursor);
+  if (events.length) console.log('[Idling] exemple :', events[0]);
+
+  const byVehicle = {};
+  events.forEach(ev => {
+    const vid = ev.asset?.id || ev.vehicle?.id || ev.vehicleId;
+    if (!vid) return;
+    const dur = ev.durationMs ?? ev.durationMilliseconds ?? 0;
+    const isPto = ev.ptoState === 'active' || ev.ptoState === 'Active';
+    if (!byVehicle[vid]) byVehicle[vid] = { totalIdleMs: 0, totalPtoMs: 0 };
+    byVehicle[vid].totalIdleMs += dur;
+    if (isPto) byVehicle[vid].totalPtoMs += dur;
+  });
+  return byVehicle;
+}
+
+async function fetchTripsForPeriod(startISO, endISO, vehicleIds) {
+  const byVehicle = {};
+  const startMs = new Date(startISO).getTime();
+  const endMs = new Date(endISO).getTime();
+  const ids = vehicleIds.length > 0 ? vehicleIds : null;
+
+  // L'endpoint trips est sur l'API legacy v1, pas la nouvelle.
+  // Path correct : /v1/fleet/trips?vehicleId=...&startMs=...&endMs=...
+  const targets = ids || state.vehicles.map(v => v.id);
+  let errorsInARow = 0;
+  for (const vid of targets) {
+    try {
+      const params = { vehicleId: vid, startMs, endMs };
+      const data = await samsaraFetch('/v1/fleet/trips', params);
+      // v1 renvoie { trips: [...] }, parfois { data: [...] } selon la version
+      const trips = data.trips || data.data || [];
+      byVehicle[vid] = trips;
+      errorsInARow = 0;
+    } catch (err) {
+      errorsInARow++;
+      console.warn('Trips KO pour ' + vid + ' :', err.message || err.status);
+      // Si 5 erreurs d'affilée → l'endpoint est mort, on arrête pour pas spammer
+      if (errorsInARow >= 5) {
+        console.warn('Abandon trips après 5 erreurs consécutives');
+        throw new Error('Endpoint /v1/fleet/trips indisponible (' + (err.message || err.status) + ')');
+      }
+    }
+  }
+  return byVehicle;
+}
+
+async function fetchStatsRange(startISO, endISO, vehicleIds, metrics) {
+  let all = [], cursor = null, pages = 0;
+  do {
+    const params = { startTime: startISO, endTime: endISO, types: metrics.join(','), limit: 512 };
+    if (vehicleIds.length > 0) params.vehicleIds = vehicleIds.join(',');
+    if (cursor) params.after = cursor;
+    const data = await samsaraFetch('/fleet/vehicles/stats/history', params);
+    all = all.concat(data.data || []);
+    cursor = data.pagination?.hasNextPage ? data.pagination.endCursor : null;
+    pages++;
+    if (pages > 50) break;
+  } while (cursor);
+  return all;
+}
+
+function renderComparative() {
+  const r = state.report;
+  if (!r || r.mode !== 'comparative') return;
+
+  const monthLabels = r.months.map(m => m.label).join(', ');
+  document.getElementById('resultsTitle').textContent = 'Rapport Comparatif de Consommation Flotte';
+  document.getElementById('resultsCount').textContent = r.vehicles.length;
+
+  const scc = document.getElementById('summaryCards');
+  scc.className = 'p-6 border-b border-gray-100 pdf-hide';
+  scc.innerHTML =
+    '<h3 class="text-2xl font-bold text-slate-800">Rapport Comparatif de Consommation Flotte</h3>' +
+    '<p class="text-sm text-slate-500 mt-1">' + escapeHtml(r.company) + ' — ' + escapeHtml(monthLabels) + ' — Données vérifiées Samsara</p>';
+
+  const rows = [
+    { key: 'liters', label: 'Consommation totale', unit: 'L', dec: 1, color: 'text-blue-700' },
+    { key: 'km', label: 'Distance parcourue', unit: 'km', dec: 1, color: 'text-blue-700' },
+    { key: 'lPer100', label: 'Efficacité globale', unit: 'L/100km', dec: 1, color: 'text-blue-700' },
+    { key: 'hours', label: 'Durée moteur totale', unit: 'h', dec: 2, color: 'text-blue-700', hmin: true },
+    { key: 'ptoHours', label: 'Temps PTO/AUX', unit: 'h', dec: 2, color: 'text-orange-500', hmin: true },
+    { key: 'idleHours', label: 'Temps d\'inactivité', unit: 'h', dec: 2, color: 'text-blue-700', hmin: true },
+    { key: 'ptoPct', label: '% Temps PTO', unit: '%', dec: 1, color: 'text-orange-500', pct: true },
+    { key: 'idlePct', label: '% Temps inactivité', unit: '%', dec: 1, color: 'text-orange-500', pct: true },
+    { key: 'fuelRate', label: 'Fuel Rate moyen', unit: 'L/h', dec: 2, color: 'text-emerald-600' }
+  ];
+
+  // --- Totaux globaux pour la page de garde ---
+  const totals = { liters: 0, km: 0, hours: 0 };
+  let hasLiters = false, hasKm = false, hasHours = false;
+  r.months.forEach(m => {
+    r.vehicles.forEach(v => {
+      const c = m.perVehicle[v.id];
+      if (!c) return;
+      if (typeof c.liters === 'number') { totals.liters += c.liters; hasLiters = true; }
+      if (typeof c.km === 'number') { totals.km += c.km; hasKm = true; }
+      if (typeof c.hours === 'number') { totals.hours += c.hours; hasHours = true; }
+    });
+  });
+  const avgL100 = hasLiters && hasKm && totals.km > 0 ? (totals.liters / totals.km * 100) : null;
+  const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  let html = '<div class="p-6 space-y-8">';
+
+  // --- PAGE DE GARDE (visible uniquement en mode PDF) ---
+  html += '<div class="pdf-only" style="padding: 0 8px 12px;">';
+  html += '<div style="text-align:center; padding: 8px 16px 16px; border-bottom: 3px solid #f97316;">';
+  html += '<div style="font-size: 36px; margin-bottom: 4px;">🚛</div>';
+  html += '<h1 style="font-size: 26px; font-weight: 800; color: #1e293b; margin: 0 0 4px;">Rapport Comparatif de Consommation Flotte</h1>';
+  html += '<p style="font-size: 16px; color: #f97316; font-weight: 600; margin: 6px 0 0;">' + escapeHtml(r.company) + '</p>';
+  html += '<p style="font-size: 12px; color: #64748b; margin-top: 4px;">' + escapeHtml(monthLabels) + '</p>';
+  html += '</div>';
+
+  // Cartes KPI globales
+  html += '<div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-top: 14px;">';
+  const card = (label, value, color) =>
+    '<div style="background:' + color + '15; border-left: 3px solid ' + color + '; padding: 10px 12px; border-radius: 5px;">' +
+    '<p style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; margin: 0 0 3px;">' + label + '</p>' +
+    '<p style="font-size: 18px; font-weight: 700; color: ' + color + '; margin: 0;">' + value + '</p></div>';
+  html += card('Véhicules', String(r.vehicles.length), '#0284c7');
+  html += card('Carburant', hasLiters ? fmt(totals.liters, 0) + ' L' : '—', '#f97316');
+  html += card('Distance', hasKm ? fmt(totals.km, 0) + ' km' : '—', '#0ea5e9');
+  html += card('Heures moteur', hasHours ? fmt(totals.hours, 0) + ' h' : '—', '#10b981');
+  html += '</div>';
+
+  if (avgL100 != null) {
+    html += '<div style="margin-top: 10px; padding: 10px 16px; background: #fafafa; border-radius: 5px; display: flex; align-items: center; justify-content: space-between;">';
+    html += '<span style="font-size: 12px; color: #64748b;">Efficacité moyenne de la flotte</span>';
+    html += '<span style="font-size: 20px; font-weight: 700; color: #1e293b;">' + fmt(avgL100, 1) + ' L / 100 km</span>';
+    html += '</div>';
+  }
+
+  html += '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8;">';
+  html += '<span>Généré le ' + today + '</span>';
+  html += '<span>Données vérifiées Samsara</span>';
+  html += '</div>';
+  html += '</div>'; // fin page de garde
+
+  html += '<p class="text-xs text-slate-400 uppercase tracking-wider pdf-hide">Tableau — ' + r.vehicles.map(v => v.name).join(' · ') + ' <span class="ml-3 normal-case tracking-normal text-slate-500">Données VÉRIFIÉES Samsara uniquement</span></p>';
+
+  r.months.forEach((m, idx) => {
+    // 1er mois : pas de page-break (reste avec la page de garde)
+    // 2e+ mois : nouvelle page en mode PDF
+    const pageBreakCls = idx > 0 ? 'pdf-page-break ' : '';
+    html += '<div class="' + pageBreakCls + 'pdf-month ' + (idx > 0 ? 'pt-6 border-t border-slate-200' : '') + '">';
+    html += '<h4 class="text-base font-semibold text-slate-800 mb-3">' + escapeHtml(m.label) + '</h4>';
+    html += '<div class="overflow-x-auto"><table class="w-full text-sm border-collapse">';
+    html += '<thead><tr class="text-xs uppercase text-slate-500">';
+    html += '<th class="text-left py-2 font-semibold">Paramètre</th>';
+    r.vehicles.forEach(v => {
+      html += '<th class="text-right py-2 px-2 font-semibold text-orange-500">' + escapeHtml(v.name) + '</th>';
+    });
+    html += '</tr></thead><tbody class="divide-y divide-slate-100">';
+
+    rows.forEach(rowDef => {
+      html += '<tr>';
+      html += '<td class="py-2 text-slate-700 font-medium">' + rowDef.label + ' <span class="text-xs text-slate-400">(' + rowDef.unit + ')</span></td>';
+      r.vehicles.forEach(v => {
+        const cell = m.perVehicle[v.id];
+        const val = cell ? cell[rowDef.key] : null;
+        let txt = '—';
+        if (val != null && !isNaN(val)) {
+          if (rowDef.hmin) txt = formatHMin(val);
+          else if (rowDef.pct) txt = fmt(val, rowDef.dec) + '%';
+          else txt = fmt(val, rowDef.dec);
+        }
+        html += '<td class="py-2 px-2 text-right ' + rowDef.color + '">' + txt + '</td>';
+      });
+      html += '</tr>';
+    });
+
+    html += '</tbody></table></div></div>';
+  });
+
+  // Panneau de diagnostic : endpoints appelés + sources de données par véhicule/mois
+  html += '<div class="pt-6 border-t border-slate-200 mt-6 pdf-hide">';
+  html += '<details open><summary class="cursor-pointer text-sm font-semibold text-slate-700 hover:text-slate-900 select-none">🔍 Diagnostic Samsara — endpoints et sources</summary>';
+
+  // Section 1 : endpoints par mois
+  html += '<div class="mt-3 space-y-2">';
+  r.months.forEach(m => {
+    const d = m.diag;
+    if (!d) return;
+    html += '<div class="bg-slate-50 rounded p-2"><p class="font-semibold text-slate-700 text-xs">' + escapeHtml(m.label) + '</p><ul class="ml-4 text-xs mt-1 space-y-0.5">';
+    d.batches.forEach(b => {
+      const icon = b.ok ? '✅' : '❌';
+      html += '<li>' + icon + ' <code>/fleet/vehicles/stats/history?types=' + b.types.join(',') + '</code> ' + (b.ok ? '→ <span class="text-emerald-600">' + b.count + ' véhicules</span>' : '<span class="text-red-600">→ ' + escapeHtml(b.error || '') + '</span>') + '</li>';
+    });
+    if (d.fuelEnergy) {
+      const icon = d.fuelEnergy.ok ? '✅' : '❌';
+      html += '<li>' + icon + ' <code>/fleet/reports/vehicles/fuel-energy</code> ' + (d.fuelEnergy.ok ? '→ <span class="text-emerald-600">' + d.fuelEnergy.count + ' véhicules</span>' : '<span class="text-red-600">→ ' + escapeHtml(d.fuelEnergy.error || '') + '</span>') + '</li>';
+    }
+    if (d.trips) {
+      const icon = d.trips.ok ? '✅' : '❌';
+      html += '<li>' + icon + ' <code>/v1/fleet/trips</code> ' + (d.trips.ok ? '→ <span class="text-emerald-600">' + d.trips.total + ' trajets</span>' : '<span class="text-red-600">→ ' + escapeHtml(d.trips.error || '') + '</span>') + '</li>';
+    }
+    if (d.eff) {
+      const icon = d.eff.ok ? '✅' : '❌';
+      html += '<li>' + icon + ' <code>/beta/fleet/drivers/efficiency</code> ' + (d.eff.ok ? '→ <span class="text-emerald-600">' + d.eff.count + ' véhicules</span>' : '<span class="text-red-600">→ ' + escapeHtml(d.eff.error || '') + '</span>') + '</li>';
+    }
+    if (d.idling) {
+      const icon = d.idling.ok ? '✅' : '❌';
+      html += '<li>' + icon + ' <code>/idling/events</code> ' + (d.idling.ok ? '→ <span class="text-emerald-600">' + d.idling.count + ' véhicules</span>' : '<span class="text-red-600">→ ' + escapeHtml(d.idling.error || '') + '</span>') + '</li>';
+    }
+    html += '</ul></div>';
+  });
+  html += '</div>';
+
+  // Section 2 : sources par véhicule (compact, comme avant)
+  html += '<div class="mt-4 overflow-x-auto"><table class="text-xs w-full border-collapse">';
+  html += '<thead><tr class="text-slate-400 uppercase"><th class="text-left py-1 pr-3">Mois</th><th class="text-left py-1 pr-3">Véhicule</th><th class="text-left py-1 pr-3">Litres</th><th class="text-left py-1 pr-3">Distance</th><th class="text-left py-1 pr-3">Heures</th><th class="text-left py-1 pr-3">Idle</th><th class="text-left py-1 pr-3">PTO</th></tr></thead><tbody>';
+  r.months.forEach(m => {
+    r.vehicles.forEach(v => {
+      const cell = m.perVehicle[v.id] || {};
+      const src = cell._sources || {};
+      const dim = x => x ? '<span class="text-emerald-600">' + escapeHtml(x) + '</span>' : '<span class="text-red-400">aucune</span>';
+      html += '<tr class="border-t border-slate-100"><td class="py-1 pr-3 text-slate-500">' + escapeHtml(m.label) + '</td><td class="py-1 pr-3 font-mono">' + escapeHtml(v.name) + '</td><td class="py-1 pr-3">' + dim(src.liters) + '</td><td class="py-1 pr-3">' + dim(src.km) + '</td><td class="py-1 pr-3">' + dim(src.hours) + '</td><td class="py-1 pr-3">' + dim(src.idle) + '</td><td class="py-1 pr-3">' + dim(src.pto) + '</td></tr>';
+    });
+  });
+  html += '</tbody></table></div>';
+  html += '<p class="text-xs text-slate-500 italic mt-2">Si "aucune" → la donnée manquait dans tous les fallbacks. Si un endpoint est ❌, c\'est probablement un scope manquant sur le token (régénérer avec "Read Fuel & Energy", "Read Vehicle Statistics", "Read Trips").</p>';
+  html += '</details></div>';
+
+  html += '</div>';
+  document.getElementById('tableContainer').innerHTML = html;
+  document.getElementById('resultsSection').classList.remove('hidden');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function exportComparativeCSV() {
+  const r = state.report;
+  if (!r || r.mode !== 'comparative') return;
+  const rows = [
+    { key: 'liters', label: 'Consommation totale (L)' },
+    { key: 'km', label: 'Distance parcourue (km)' },
+    { key: 'lPer100', label: 'Efficacité globale (L/100km)' },
+    { key: 'hours', label: 'Durée moteur totale (h)' },
+    { key: 'ptoHours', label: 'Temps PTO/AUX (h)' },
+    { key: 'idleHours', label: 'Temps d\'inactivité (h)' },
+    { key: 'ptoPct', label: '% Temps PTO' },
+    { key: 'idlePct', label: '% Temps inactivité' },
+    { key: 'fuelRate', label: 'Fuel Rate moyen (L/h)' }
+  ];
+  const lines = [];
+  lines.push(['Rapport Comparatif de Consommation Flotte']);
+  lines.push([r.company]);
+  lines.push([r.months.map(m => m.label).join(' · ')]);
+  lines.push([]);
+
+  r.months.forEach(m => {
+    lines.push([m.label]);
+    lines.push(['Paramètre', ...r.vehicles.map(v => v.name)]);
+    rows.forEach(rd => {
+      const line = [rd.label];
+      r.vehicles.forEach(v => {
+        const cell = m.perVehicle[v.id];
+        const val = cell ? cell[rd.key] : null;
+        line.push(val != null && !isNaN(val) ? String(val).replace('.', ',') : '');
+      });
+      lines.push(line);
+    });
+    lines.push([]);
+  });
+
+  const csv = lines.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rapport-comparatif-' + r.startDate + '-' + r.endDate + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderResults() {
+  const r = state.report;
+  if (!r) return;
+  const price = parseFloat(document.getElementById('fuelPrice')?.value) || 0;
+  const cap = TANK_CAPACITY_L;
+  const showFuel = r.metrics.includes('fuelPercents');
+  const showDist = r.metrics.includes('obdOdometerMeters');
+  const showHours = r.metrics.includes('obdEngineSeconds');
+
+  const sorted = [...r.data].sort((a, b) => {
+    const va = a[state.sortKey], vb = b[state.sortKey];
+    if (typeof va === 'number' && typeof vb === 'number') return state.sortDir === 'asc' ? va - vb : vb - va;
+    return state.sortDir === 'asc' ? String(va ?? '').localeCompare(String(vb ?? '')) : String(vb ?? '').localeCompare(String(va ?? ''));
+  });
+
+  // litersDirect (Fuel & Energy Report ou trips) prime sur le calcul %×capacité
+  const getLiters = v => {
+    if (typeof v.litersDirect === 'number') return v.litersDirect;
+    if (v.fuelDelta != null && cap > 0) return (v.fuelDelta / 100) * cap;
+    return null;
+  };
+
+  const totals = sorted.reduce((acc, v) => {
+    const liters = getLiters(v);
+    acc.distanceKm += v.distanceKm || 0;
+    acc.engineHours += v.engineHours || 0;
+    if (liters != null) { acc.liters = (acc.liters || 0) + liters; acc.cost = (acc.cost || 0) + liters * price; }
+    return acc;
+  }, { distanceKm: 0, engineHours: 0, liters: null, cost: null });
+
+  document.getElementById('resultsTitle').textContent = 'Résultats — ' + r.startDate + ' au ' + r.endDate;
+  document.getElementById('resultsCount').textContent = sorted.length;
+
+  // Cartes résumé
+  let cards = '';
+  if (showDist) cards += '<div class="bg-blue-50 rounded-xl p-4"><p class="text-xs font-medium text-blue-700 mb-1">📍 Distance totale</p><p class="text-2xl font-bold text-blue-800">' + fmt(totals.distanceKm, 0) + ' <span class="text-sm font-normal">km</span></p></div>';
+  if (showFuel && cap > 0) cards += '<div class="bg-orange-50 rounded-xl p-4"><p class="text-xs font-medium text-orange-700 mb-1">⛽ Carburant total</p><p class="text-2xl font-bold text-orange-800">' + (totals.liters != null ? fmt(totals.liters, 0) : '—') + ' <span class="text-sm font-normal">L</span></p></div>';
+  if (showHours) cards += '<div class="bg-green-50 rounded-xl p-4"><p class="text-xs font-medium text-green-700 mb-1">⏱️ Heures moteur</p><p class="text-2xl font-bold text-green-800">' + fmt(totals.engineHours, 0) + ' <span class="text-sm font-normal">h</span></p></div>';
+  if (showFuel && cap > 0 && price > 0 && totals.cost != null) cards += '<div class="bg-purple-50 rounded-xl p-4"><p class="text-xs font-medium text-purple-700 mb-1">💶 Coût estimé</p><p class="text-2xl font-bold text-purple-800">' + fmt(totals.cost, 2) + ' <span class="text-sm font-normal">€</span></p></div>';
+  const sc = document.getElementById('summaryCards');
+  sc.className = 'grid grid-cols-2 sm:grid-cols-4 gap-4 p-6 border-b border-gray-100';
+  sc.innerHTML = cards;
+
+  // Table
+  if (sorted.length === 0) {
+    document.getElementById('tableContainer').innerHTML = '<div class="text-center py-12 text-slate-400"><p>Aucune donnée disponible pour cette période.</p><p class="text-sm mt-1">Vérifiez que vos véhicules remontent des données OBD.</p></div>';
+  } else {
+    let headers = '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="name">Véhicule</th>';
+    if (showFuel) {
+      headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="fuelStart">Début %</th>';
+      headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="fuelEnd">Fin %</th>';
+      headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="fuelDelta">Conso %</th>';
+      if (cap > 0) headers += '<th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Litres</th>';
+      if (cap > 0 && price > 0) headers += '<th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Coût €</th>';
+    }
+    if (showDist) headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="distanceKm">Distance km</th>';
+    if (showHours) headers += '<th class="sortable px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase" data-col="engineHours">Heures</th>';
+    if (showDist && showFuel && cap > 0) headers += '<th class="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">L/100km</th>';
+
+    // Petit badge discret indiquant la source (apparaît seulement si fallback)
+    const srcBadge = (src, primary) => {
+      if (!src || src === primary) return '';
+      return ' <span class="inline-block ml-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200" title="Source utilisée : ' + src + '">' + src + '</span>';
+    };
+
+    let rows = '';
+    sorted.forEach((v, i) => {
+      const liters = getLiters(v);
+      const cost = liters != null && price > 0 ? liters * price : null;
+      const l100 = liters != null && v.distanceKm > 0 ? (liters / v.distanceKm) * 100 : null;
+      const s = v.sources || {};
+      rows += '<tr class="' + (i % 2 ? 'bg-slate-50/50' : 'bg-white') + '">';
+      rows += '<td class="px-4 py-3 font-medium text-slate-800">🚛 ' + (v.name || '') + '</td>';
+      if (showFuel) {
+        rows += '<td class="px-4 py-3 text-slate-600">' + (v.fuelStart != null ? fmt(v.fuelStart, 1) + '%' : '—') + '</td>';
+        rows += '<td class="px-4 py-3 text-slate-600">' + (v.fuelEnd != null ? fmt(v.fuelEnd, 1) + '%' : '—') + '</td>';
+        rows += '<td class="px-4 py-3"><span class="font-medium ' + (v.fuelDelta > 0 ? 'text-red-600' : 'text-green-600') + '">' + (v.fuelDelta != null ? fmt(Math.abs(v.fuelDelta), 1) + '%' : '—') + '</span></td>';
+        if (cap > 0) rows += '<td class="px-4 py-3 font-medium">' + (liters != null ? fmt(liters, 1) + ' L' : '—') + srcBadge(s.liters, 'fuelPercents×cap') + '</td>';
+        if (cap > 0 && price > 0) rows += '<td class="px-4 py-3 text-purple-700 font-medium">' + (cost != null ? fmt(cost, 2) + ' €' : '—') + '</td>';
+      }
+      if (showDist) rows += '<td class="px-4 py-3 text-blue-700 font-medium">' + (v.distanceKm != null ? fmt(v.distanceKm, 1) + ' km' : '—') + srcBadge(s.distance, 'obdOdometerMeters') + '</td>';
+      if (showHours) rows += '<td class="px-4 py-3 text-green-700">' + (v.engineHours != null ? fmt(v.engineHours, 1) + ' h' : '—') + srcBadge(s.hours, 'obdEngineSeconds') + '</td>';
+      if (showDist && showFuel && cap > 0) rows += '<td class="px-4 py-3 text-slate-600">' + (l100 != null ? fmt(l100, 1) : '—') + '</td>';
+      rows += '</tr>';
+    });
+
+    let footer = '<tr class="font-semibold text-slate-700 bg-slate-100 border-t-2"><td class="px-4 py-3">TOTAL</td>';
+    if (showFuel) {
+      footer += '<td class="px-4 py-3">—</td><td class="px-4 py-3">—</td><td class="px-4 py-3">—</td>';
+      if (cap > 0) footer += '<td class="px-4 py-3">' + (totals.liters != null ? fmt(totals.liters, 1) + ' L' : '—') + '</td>';
+      if (cap > 0 && price > 0) footer += '<td class="px-4 py-3 text-purple-700">' + (totals.cost != null ? fmt(totals.cost, 2) + ' €' : '—') + '</td>';
+    }
+    if (showDist) footer += '<td class="px-4 py-3 text-blue-700">' + fmt(totals.distanceKm, 1) + ' km</td>';
+    if (showHours) footer += '<td class="px-4 py-3 text-green-700">' + fmt(totals.engineHours, 1) + ' h</td>';
+    if (showDist && showFuel && cap > 0) footer += '<td class="px-4 py-3">—</td>';
+    footer += '</tr>';
+
+    // ----- Panneau diagnostic : ce que Samsara renvoie réellement -----
+    let diagHtml = '';
+    if (r.diag) {
+      const d = r.diag;
+      diagHtml += '<details class="mt-6 mx-6 mb-6 bg-slate-50 border border-slate-200 rounded-xl"><summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700">🔍 Diagnostic Samsara — clique pour voir ce que l\'API a renvoyé</summary><div class="p-4 text-xs space-y-3">';
+
+      // Endpoints
+      diagHtml += '<div><strong class="text-slate-700">Endpoints appelés :</strong><ul class="ml-4 mt-1 space-y-0.5">';
+      d.batches.forEach(b => {
+        const icon = b.ok ? '✅' : '❌';
+        diagHtml += '<li>' + icon + ' <code>/fleet/vehicles/stats/history?types=' + b.types.join(',') + '</code> ' + (b.ok ? '→ ' + b.vehicleCount + ' véhicules' : '<span class="text-red-600">→ ' + escapeHtml(b.error || '') + '</span>') + '</li>';
+      });
+      if (d.fuelEnergy) {
+        const icon = d.fuelEnergy.ok ? '✅' : '❌';
+        diagHtml += '<li>' + icon + ' <code>/fleet/reports/vehicles/fuel-energy</code> ' + (d.fuelEnergy.ok ? '→ ' + d.fuelEnergy.vehicleCount + ' véhicules' : '<span class="text-red-600">→ ' + escapeHtml(d.fuelEnergy.error || '') + '</span>') + '</li>';
+      }
+      if (d.trips) {
+        const icon = d.trips.ok ? '✅' : '❌';
+        diagHtml += '<li>' + icon + ' <code>/fleet/trips</code> ' + (d.trips.ok ? '→ ' + d.trips.totalTrips + ' trajets' : '<span class="text-red-600">→ ' + escapeHtml(d.trips.error || '') + '</span>') + '</li>';
+      }
+      diagHtml += '</ul></div>';
+
+      // Par véhicule
+      diagHtml += '<div><strong class="text-slate-700">Par véhicule :</strong><div class="overflow-x-auto mt-1"><table class="text-xs w-full"><thead class="bg-slate-100"><tr><th class="text-left px-2 py-1">Véhicule</th><th class="text-left px-2 py-1">Stats reçues</th><th class="text-left px-2 py-1">Source carburant</th><th class="text-left px-2 py-1">Source distance</th><th class="text-left px-2 py-1">Source heures</th></tr></thead><tbody>';
+      Object.values(d.perVehicle).sort((a, b) => a.name.localeCompare(b.name)).forEach(p => {
+        const dim = x => x ? '<span class="font-mono">' + escapeHtml(x) + '</span>' : '<span class="text-red-500">aucune</span>';
+        diagHtml += '<tr class="border-t border-slate-200"><td class="px-2 py-1 font-medium">' + escapeHtml(p.name) + '</td><td class="px-2 py-1 font-mono text-slate-500">' + (p.statsReceived.length ? escapeHtml(p.statsReceived.join(', ')) : '<span class="text-red-500">aucune</span>') + '</td><td class="px-2 py-1">' + dim(p.sources.liters || p.sources.fuel) + '</td><td class="px-2 py-1">' + dim(p.sources.distance) + '</td><td class="px-2 py-1">' + dim(p.sources.hours) + '</td></tr>';
+      });
+      diagHtml += '</tbody></table></div></div>';
+
+      diagHtml += '<p class="text-slate-500 italic">Si une colonne "Stats reçues" est "aucune", le véhicule n\'a remonté AUCUNE donnée Samsara pour la période (pas branché OBD, hors zone GPS, ou éteint). Si un endpoint est ❌, c\'est probablement une question de scope sur le token API.</p>';
+      diagHtml += '</div></details>';
+    }
+
+    document.getElementById('tableContainer').innerHTML =
+      '<table class="w-full text-sm"><thead class="bg-slate-50"><tr>' + headers + '</tr></thead><tbody class="divide-y divide-gray-50">' + rows + '</tbody><tfoot>' + footer + '</tfoot></table>' + diagHtml;
+
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (state.sortKey === col) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        else { state.sortKey = col; state.sortDir = 'asc'; }
+        renderResults();
+      });
+    });
+  }
+
+  document.getElementById('resultsSection').classList.remove('hidden');
+}
+
+// ============ Export PDF (impression native du navigateur) ============
+// On utilise window.print() + @media print : le navigateur gère la pagination
+// et l'alignement nativement (texte net, tableaux centrés, pas de rasterisation).
+// L'utilisateur choisit « Enregistrer au format PDF » dans la boîte d'impression.
+function exportPDF() {
+  if (!state.report) return;
+  const isLandscape = state.report.mode === 'comparative';
+
+  // Injecte l'orientation + marges de la page imprimée
+  let styleEl = document.getElementById('printPage');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'printPage';
+    document.head.appendChild(styleEl);
+  }
+  // margin: 0 → Chrome supprime ses en-têtes/pieds (URL, date). Les marges
+  // visuelles sont recréées par le padding du contenu (cf @media print).
+  styleEl.textContent = '@page { size: A4 ' + (isLandscape ? 'landscape' : 'portrait') + '; margin: 0; }';
+
+  // Déplie les <details> ? Non : ils sont en .pdf-hide donc exclus de l'impression.
+  // On lance simplement le dialogue d'impression.
+  window.print();
+}
+
+function exportCSV() {
+  if (!state.report) return;
+  if (state.report.mode === 'comparative') return exportComparativeCSV();
+  const r = state.report;
+  const price = parseFloat(document.getElementById('fuelPrice')?.value) || 0;
+  const cap = TANK_CAPACITY_L;
+  const showFuel = r.metrics.includes('fuelPercents');
+  const showDist = r.metrics.includes('obdOdometerMeters');
+  const showHours = r.metrics.includes('obdEngineSeconds');
+
+  const headers = ['Véhicule', 'ID'];
+  if (showFuel) { headers.push('Début %', 'Fin %', 'Conso %'); if (cap > 0) headers.push('Litres'); if (cap > 0 && price > 0) headers.push('Coût €'); }
+  if (showDist) headers.push('Distance km');
+  if (showHours) headers.push('Heures');
+  if (showDist && showFuel && cap > 0) headers.push('L/100km');
+
+  const rows = r.data.map(v => {
+    const liters = v.fuelDelta != null && cap > 0 ? (v.fuelDelta / 100) * cap : null;
+    const cost = liters != null ? liters * price : null;
+    const l100 = liters != null && v.distanceKm > 0 ? (liters / v.distanceKm) * 100 : null;
+    const row = [v.name, v.id];
+    if (showFuel) {
+      row.push(v.fuelStart ?? '', v.fuelEnd ?? '', v.fuelDelta ?? '');
+      if (cap > 0) row.push(liters != null ? liters.toFixed(2) : '');
+      if (cap > 0 && price > 0) row.push(cost != null ? cost.toFixed(2) : '');
+    }
+    if (showDist) row.push(v.distanceKm ?? '');
+    if (showHours) row.push(v.engineHours ?? '');
+    if (showDist && showFuel && cap > 0) row.push(l100 != null ? l100.toFixed(2) : '');
+    return row;
+  });
+
+  const csv = [headers, ...rows].map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'rapport-samsara-' + r.startDate + '-' + r.endDate + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============ Init ============
+loadConfig();
+setConfigStatus();
+setRegionUI();
+if (state.token) document.getElementById('tokenInput').value = state.token;
+
+// Dates par défaut
+(function() {
+  const today = new Date();
+  const past = new Date(); past.setDate(past.getDate() - 30);
+  document.getElementById('endDate').value = today.toISOString().slice(0, 10);
+  document.getElementById('startDate').value = past.toISOString().slice(0, 10);
+})();
+
+document.querySelectorAll('.region-btn').forEach(b => {
+  b.addEventListener('click', () => { state.region = b.dataset.region; saveConfigToLS(); setRegionUI(); });
+});
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const t = document.getElementById('tokenInput').value.replace(/[^A-Za-z0-9_]/g, '');
+  if (!t) return;
+  state.token = t;
+  saveConfigToLS();
+  setConfigStatus();
+  document.getElementById('tokenInput').value = '';
+  testConnection();
+});
+document.getElementById('testBtn').addEventListener('click', () => {
+  if (!state.token) { showConnResult('<div class="mt-3 text-sm text-red-600">Sauvegardez d\'abord un token.</div>'); return; }
+  testConnection();
+});
+document.getElementById('detectBtn').addEventListener('click', () => {
+  const typed = document.getElementById('tokenInput').value.replace(/[^A-Za-z0-9_]/g, '');
+  if (typed) state.token = typed;
+  if (!state.token) { showConnResult('<div class="mt-3 text-sm text-red-600">Saisissez ou sauvegardez d\'abord un token.</div>'); return; }
+  detectRegion();
+});
+document.querySelectorAll('.quick-range').forEach(b => {
+  b.addEventListener('click', () => {
+    if (b.dataset.days !== undefined) applyQuickRange({ days: parseInt(b.dataset.days) });
+    else applyQuickRange({ preset: b.dataset.preset });
+  });
+});
+document.getElementById('selectAllVehicles').addEventListener('click', () => {
+  getVisibleVehicleCheckboxes().forEach(c => c.checked = true);
+  updateVehicleCount();
+});
+document.getElementById('clearVehicles').addEventListener('click', () => {
+  getVisibleVehicleCheckboxes().forEach(c => c.checked = false);
+  updateVehicleCount();
+});
+document.getElementById('reloadVehicles').addEventListener('click', loadVehicles);
+document.getElementById('vehicleSearch').addEventListener('input', applyVehicleSearch);
+document.getElementById('clearSearch').addEventListener('click', () => {
+  document.getElementById('vehicleSearch').value = '';
+  applyVehicleSearch();
+  document.getElementById('vehicleSearch').focus();
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (!confirm('Effacer le token et la région stockés dans le navigateur ?')) return;
+  localStorage.removeItem(LS_KEY);
+  state.token = '';
+  state.region = 'EU';
+  document.getElementById('tokenInput').value = '';
+  setConfigStatus();
+  setRegionUI();
+  showConnResult('<div class="mt-3 text-sm text-slate-500">Données effacées. Saisissez votre token et sélectionnez la région.</div>');
+  document.getElementById('filtersSection').classList.add('hidden');
+  document.getElementById('resultsSection').classList.add('hidden');
+});
+document.getElementById('generateBtn').addEventListener('click', generateReport);
+document.getElementById('exportBtn').addEventListener('click', exportCSV);
+document.getElementById('exportPdfBtn').addEventListener('click', exportPDF);
+
+// Si un token est déjà sauvegardé, on teste automatiquement
+if (state.token) {
+  document.getElementById('filtersSection').classList.remove('hidden');
+  testConnection();
+}
+</script>
+</body>
+</html>
